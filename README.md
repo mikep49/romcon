@@ -32,20 +32,17 @@ The [guide](docs/guide.md#features) lists every gesture, key and setting.
 
 ## Getting started
 
-### 1. Build the two apps
+### 1. Get the two apps
 
-There are no downloads yet, so you build both from this repository.
+**On the PC**, download [RomCon.exe](https://github.com/mikep49/romcon/releases/latest/download/RomCon.exe) and put it anywhere you like. There's nothing to install.
 
-```powershell
-# Windows app: produces windows\bin\RomCon.exe
-powershell -ExecutionPolicy Bypass -File windows\build.ps1
+**On the phone**, add RomCon to [Obtainium](https://obtainium.imranr.dev/), which also keeps it up to date:
 
-# Android app: produces android\app\build\outputs\apk\release\app-release.apk
-cd android
-.\gradlew.bat assembleRelease
-```
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/mikep49/romcon"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" height="56" alt="Get it on Obtainium"></a>
 
-The Windows build needs a C# compiler (Visual Studio, its Build Tools, or the .NET SDK). The Android build needs a JDK, version 21 or newer. [Building](docs/guide.md#building) has the details.
+Or download [RomCon.apk](https://github.com/mikep49/romcon/releases/latest/download/RomCon.apk) and open it on the phone. Android asks you to allow installing from your browser or file manager the first time.
+
+Every version is on the [releases page](https://github.com/mikep49/romcon/releases).
 
 ### 2. Pair your phone
 
@@ -67,5 +64,5 @@ Windows itself blocks a few things:
 
 ## More
 
-- [Guide](docs/guide.md): all features, building, Tailscale, security, and notes for developers.
+- [Guide](docs/guide.md): all features, Tailscale, security, and notes for developers.
 - [Protocol](docs/protocol.md): how the two apps talk to each other.

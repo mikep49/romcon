@@ -3,7 +3,6 @@
 Everything the [README](../README.md) leaves out.
 
 - [Features](#features)
-- [Building](#building)
 - [Managing phones](#managing-phones)
 - [Tailscale](#tailscale)
 - [Security](#security)
@@ -48,39 +47,6 @@ Everything the [README](../README.md) leaves out.
 ### Themes
 
 Both apps offer System default, Light, Dark and OLED black. On the PC, the theme is on the **Settings** tab.
-
-## Building
-
-The repository holds both apps:
-
-```
-windows/          Windows tray app (C#, no project file needed)
-  build.ps1       builds windows\bin\RomCon.exe
-  src/            server, input injection, pairing, UI
-android/          Android app (Gradle, Kotlin, Compose)
-docs/protocol.md  wire protocol shared by both
-```
-
-### Windows
-
-```powershell
-powershell -ExecutionPolicy Bypass -File windows\build.ps1
-```
-
-This produces `windows\bin\RomCon.exe`. The script needs a Roslyn C# compiler: Visual Studio or *Build Tools for Visual Studio* (any edition with C#), or the .NET SDK. It finds either one automatically.
-
-The exe uses the .NET Framework 4.8 that ships with Windows 10 and 11, so it runs on any such PC as-is. Copy it anywhere.
-
-### Android
-
-```powershell
-cd android
-$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"   # any JDK 21+
-.\gradlew.bat assembleRelease      # app\build\outputs\apk\release\app-release.apk
-.\gradlew.bat assembleDebug        # app\build\outputs\apk\debug\app-debug.apk
-```
-
-The release APK is minified and signed with the debug key so you can install it directly (`adb install`, or copy it to the phone). Use your own signing key before publishing it anywhere.
 
 ## Managing phones
 
@@ -136,7 +102,7 @@ The wire format is in [protocol.md](protocol.md).
 The Android unit tests include `LiveServerTest`, which pairs with and drives a real PC server through the app's own networking code. It's skipped unless you point it at one:
 
 ```powershell
-windows\bin\RomCon.exe --dry-run --data-dir $env:TEMP\romcon-test --port 50599
+RomCon.exe --dry-run --data-dir $env:TEMP\romcon-test --port 50599
 # read the PIN from the RomCon window, then:
 cd android
 $env:ROMCON_TEST_HOST="127.0.0.1"; $env:ROMCON_TEST_PORT="50599"; $env:ROMCON_TEST_PIN="123456"

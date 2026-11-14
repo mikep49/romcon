@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -15,14 +17,29 @@ android {
         versionName = "1.0.0"
     }
 
+    // Published APKs are signed with the key described by a properties file kept outside the repository
+    // (storeFile, storePassword, keyAlias, keyPassword). Without it, release builds use the debug key.
+    val keystoreProperties = file(
+        System.getenv("ROMCON_KEYSTORE_PROPERTIES") ?: "${System.getProperty("user.home")}/.romcon/keystore.properties"
+    ).takeIf { it.isFile }?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+
+    signingConfigs {
+        if (keystoreProperties != null) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so the release APK installs straight away for personal use.
-            // Swap in your own signing config before publishing anywhere.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (keystoreProperties != null) "release" else "debug")
         }
     }
 
