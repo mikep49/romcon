@@ -24,6 +24,7 @@ namespace RomCon
         public int Port = Proto.DefaultPort;
         public string ServerName = Environment.MachineName;
         public bool NotifyOnConnect = true;
+        public ThemeMode Theme = ThemeMode.System;
 
         readonly List<PairedDevice> devices = new List<PairedDevice>();
         readonly object gate = new object();
@@ -58,6 +59,9 @@ namespace RomCon
                         case "notify":
                             c.NotifyOnConnect = value != "0" && !value.Equals("false", StringComparison.OrdinalIgnoreCase);
                             break;
+                        case "theme":
+                            if (Enum.TryParse(value, true, out ThemeMode mode) && Enum.IsDefined(typeof(ThemeMode), mode)) c.Theme = mode;
+                            break;
                     }
                 }
             }
@@ -87,6 +91,7 @@ namespace RomCon
             sb.AppendLine("port=" + Port);
             sb.AppendLine("name=" + ServerName);
             sb.AppendLine("notify=" + (NotifyOnConnect ? "1" : "0"));
+            sb.AppendLine("theme=" + Theme.ToString().ToLowerInvariant());
             WriteAtomically(SettingsPath, sb.ToString());
         }
 

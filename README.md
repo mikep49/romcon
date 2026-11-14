@@ -2,7 +2,7 @@
 
 Control a Windows PC from an Android phone: a trackpad, a keyboard, shortcuts and media keys, over your Wi-Fi or over Tailscale.
 
-- **Windows app**: a ~160 KB tray app with no installer and no runtime to install. It uses the .NET Framework 4.8 that ships with Windows 10 and 11.
+- **Windows app**: a ~175 KB tray app with no installer and no runtime to install. It uses the .NET Framework 4.8 that ships with Windows 10 and 11.
 - **Android app**: Kotlin and Jetpack Compose, Android 8.0 and newer.
 
 ## Features
@@ -71,9 +71,9 @@ The release APK is minified and signed with the debug key so you can install it 
 2. **Open the app on the phone.** On the same Wi-Fi, the PC appears under *On this Wi-Fi*. Otherwise tap **Add by address** and enter an address from the PC window: the Wi-Fi IP, or the Tailscale IP or name.
 3. **Pair.** Check that the *PC code* in the app matches the one in the PC window, then type the 6-digit PIN shown on the PC. Pairing happens once per phone. Later, tap the PC to connect.
 
-To pair another phone later, click **Pair a new phone** in the PC window or the tray menu. To revoke a phone, select it under *Paired phones* and click **Remove phone**.
+To pair another phone later, click **Pair a new phone** in the PC window or the tray menu. To revoke a phone, click **Remove** next to it under *Paired phones*.
 
-Closing the PC window keeps RomCon running in the tray. Turn on **Start with Windows** to have it ready after every sign-in.
+Closing the PC window keeps RomCon running in the tray. On the **Settings** tab, turn on **Start with Windows** to have it ready after every sign-in, and pick a theme: System default, Light, Dark or OLED black, the same choices as the phone app.
 
 ### Tailscale
 
