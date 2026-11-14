@@ -83,7 +83,7 @@ fun SettingsScreen(vm: AppViewModel) {
                     null -> SettingsHome(vm, s)
                     SettingsPage.APPEARANCE -> AppearanceSettings(vm, s)
                     SettingsPage.MOUSE -> MouseSettings(vm, s)
-                    SettingsPage.KEYBOARD -> KeyboardSettings()
+                    SettingsPage.KEYBOARD -> KeyboardSettings(vm, s)
                     SettingsPage.BOTTOM_BAR -> BottomBarSettings(vm, s)
                     SettingsPage.GENERAL -> GeneralSettings(vm, s)
                 }
@@ -188,7 +188,7 @@ private fun MouseSettings(vm: AppViewModel, s: AppSettings) {
 }
 
 @Composable
-private fun KeyboardSettings() {
+private fun KeyboardSettings(vm: AppViewModel, s: AppSettings) {
     Section("Modifier keys")
     Help(
         "Open Shortcuts or Keys from the bottom bar, then tap Ctrl, Alt, Shift or Win to apply it to the next key.\n" +
@@ -197,6 +197,17 @@ private fun KeyboardSettings() {
     )
 
     Section("Typing")
+    SwitchSetting(
+        "Show what you type",
+        "A box above the phone keyboard repeats what you type on the PC, so you can spot a typo without looking up",
+        s.typingPreview,
+    ) { v -> vm.updateSettings { it.copy(typingPreview = v) } }
+    if (s.typingPreview) {
+        Help(
+            "The box only knows what this phone typed. It starts again when you press Enter, click, or use a shortcut, " +
+                "because the caret on the PC may have moved.",
+        )
+    }
     Help(
         "Suggestions and autocorrect stay off while typing to the PC, since the phone can't see what's on its screen.\n" +
             "Use Send text to write a longer passage on the phone and send it in one go.",

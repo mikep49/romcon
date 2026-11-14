@@ -12,6 +12,7 @@ import dev.romcon.data.SavedPc
 import dev.romcon.data.Store
 import dev.romcon.input.Latch
 import dev.romcon.input.ModKey
+import dev.romcon.input.TypedLine
 import dev.romcon.input.Vk
 import dev.romcon.input.letterOrDigitVk
 import dev.romcon.net.DiscoveredPc
@@ -93,6 +94,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** On-screen modifier latches (Ctrl, Alt, Shift, Win). */
     val latches = mutableStateMapOf<ModKey, Latch>()
+
+    /** What the phone has typed on the PC, for the preview above the keyboard. */
+    var typed by mutableStateOf(TypedLine.EMPTY)
+        private set
 
     @Volatile private var session: RemoteSession? = null
     private var connectJob: Job? = null
@@ -350,6 +355,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         altHeld = false
         session?.close()
         session = null
+        typed = TypedLine.EMPTY
     }
 
     /** Drop the connection while the app is in the background; the PC releases anything still held. */
@@ -382,6 +388,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
         _settings.update(transform)
         store.saveSettings(_settings.value)
+        if (!_settings.value.typingPreview) typed = TypedLine.EMPTY
     }
 
     // ---------- Input ----------
@@ -390,17 +397,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun scroll(vertical: Int, horizontal: Int) = session?.scroll(vertical, horizontal)
 
-    fun button(button: Int, down: Boolean) = session?.button(button, down)
-
-    fun click(button: Int) {
-        session?.button(button, true)
-        session?.button(button, false)
+    fun button(button: Int, down: Boolean) {
+        val s = session ?: return
+        s.button(button, down)
+        if (down) mirror { TypedLine.EMPTY } // a click usually moves the caret somewhere else
     }
 
-    fun lockPc() = session?.command(Proto.CMD_LOCK)
+    fun click(button: Int) {
+        button(button, true)
+        button(button, false)
+    }
+
+    fun lockPc() {
+        val s = session ?: return
+        s.command(Proto.CMD_LOCK)
+        mirror { TypedLine.EMPTY }
+    }
 
     /** Types text exactly as given, ignoring on-screen modifier latches. */
-    fun sendText(text: String) = session?.text(text)
+    fun sendText(text: String) {
+        val s = session ?: return
+        s.text(text)
+        mirror { it.insert(text) }
+    }
 
     /** Text from the phone keyboard. With a modifier latched, each character becomes a shortcut instead. */
     fun type(text: String) {
@@ -408,6 +427,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val mods = takeMods()
         if (mods == 0) {
             s.text(text)
+            mirror { it.insert(text) }
             return
         }
         for (c in text) {
@@ -418,17 +438,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 else -> s.charWithMods(c, mods)
             }
         }
+        mirror { TypedLine.EMPTY }
     }
 
     /** A key tap with the latched modifiers plus [extraMods]. */
     fun key(vk: Int, extraMods: Int = 0) {
-        session?.key(vk, Proto.KEY_TAP, takeMods() or extraMods)
+        val s = session ?: return
+        val mods = takeMods() or extraMods
+        s.key(vk, Proto.KEY_TAP, mods)
+        mirror { it.key(vk, mods) }
     }
 
     /** A fixed shortcut such as Ctrl+C; ignores and clears one-shot latches. */
     fun shortcut(vk: Int, mods: Int) {
         takeMods()
-        session?.key(vk, Proto.KEY_TAP, mods)
+        val s = session ?: return
+        s.key(vk, Proto.KEY_TAP, mods)
+        mirror { it.key(vk, mods) }
     }
 
     /** Alt+Tab that keeps Alt held between taps, so tapping again moves through the window list. */
@@ -439,12 +465,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             altHeld = true
         }
         s.key(Vk.TAB, Proto.KEY_TAP)
+        mirror { TypedLine.EMPTY }
         altTabJob?.cancel()
         altTabJob = viewModelScope.launch {
             delay(1100)
             session?.key(Vk.ALT, Proto.KEY_UP)
             altHeld = false
         }
+    }
+
+    fun clearTyped() {
+        typed = TypedLine.EMPTY
+    }
+
+    /** Keeps [typed] in step with what was just sent. A paused PC ignores input, so nothing is typed there. */
+    private fun mirror(change: (TypedLine) -> TypedLine) {
+        if (!_settings.value.typingPreview) return
+        if ((_conn.value as? ConnState.Connected)?.pcPaused != false) return
+        typed = change(typed)
     }
 
     fun toggleLatch(mod: ModKey) {
