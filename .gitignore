@@ -1,0 +1,13 @@
+# Windows build output
+windows/bin/
+
+# Android build output and local config
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+android/.idea/
+*.iml
+*.jks
+*.keystore
