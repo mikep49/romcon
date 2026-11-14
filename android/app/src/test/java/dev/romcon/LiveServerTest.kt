@@ -55,8 +55,12 @@ class LiveServerTest {
         session.hello("jvm-test", "JVM test", Proto.AUTH_TOKEN, welcome.token)
         val status = CountDownLatch(1)
         val closed = CountDownLatch(1)
+        val udp = CountDownLatch(1)
         session.start(object : RemoteSession.Listener {
             override fun onStatus(pcPaused: Boolean) = status.countDown()
+            override fun onUdp(active: Boolean) {
+                if (active) udp.countDown()
+            }
             override fun onClosed(error: RemoteException) = closed.countDown()
         })
         assertTrue("PC sent its status", status.await(3, TimeUnit.SECONDS))
@@ -68,6 +72,20 @@ class LiveServerTest {
         session.key(0x43, Proto.KEY_TAP, Proto.MOD_CTRL)
         Thread.sleep(3500) // long enough for a ping round trip
         assertTrue("connection stayed up", session.isOpen && closed.count == 1L)
+
+        // Switch pointer movement to UDP mid-connection. The PC only confirms a datagram it could decrypt.
+        session.preferUdp = true
+        assertTrue("PC confirmed a UDP datagram", udp.await(5, TimeUnit.SECONDS))
+        // Drags: in the PC's log each movement must sit between its button down and up, though it took another road.
+        repeat(40) { i ->
+            session.button(Proto.BUTTON_LEFT, true)
+            repeat(20) { session.move(3, 4) }
+            session.button(Proto.BUTTON_LEFT, false)
+            if (i % 4 == 0) Thread.sleep(15)
+        }
+        session.scroll(120, 0)
+        Thread.sleep(500)
+        assertTrue("connection stayed up over UDP", session.isOpen && closed.count == 1L)
         session.close()
 
         // A different pinned certificate is refused before anything is sent.

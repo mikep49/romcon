@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,10 +50,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.romcon.AppViewModel
+import dev.romcon.ConnState
 import dev.romcon.SettingsPage
 import dev.romcon.data.AppSettings
 import dev.romcon.data.BarButton
 import dev.romcon.data.ThemeMode
+import dev.romcon.data.Transport
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,6 +88,7 @@ fun SettingsScreen(vm: AppViewModel) {
                     SettingsPage.MOUSE -> MouseSettings(vm, s)
                     SettingsPage.KEYBOARD -> KeyboardSettings(vm, s)
                     SettingsPage.BOTTOM_BAR -> BottomBarSettings(vm, s)
+                    SettingsPage.CONNECTION -> ConnectionSettings(vm, s)
                     SettingsPage.GENERAL -> GeneralSettings(vm, s)
                 }
                 Spacer(Modifier.padding(bottom = 24.dp))
@@ -99,6 +103,7 @@ private val SettingsPage.title: String
         SettingsPage.MOUSE -> "Mouse"
         SettingsPage.KEYBOARD -> "Keyboard"
         SettingsPage.BOTTOM_BAR -> "Bottom bar"
+        SettingsPage.CONNECTION -> "Connection"
         SettingsPage.GENERAL -> "General"
     }
 
@@ -119,6 +124,7 @@ private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
     PageLink(Icons.Filled.Mouse, "Mouse", "Pointer speed, scrolling, tap to click") { vm.openSettingsPage(SettingsPage.MOUSE) }
     PageLink(Icons.Filled.Keyboard, "Keyboard", "Modifier keys and typing") { vm.openSettingsPage(SettingsPage.KEYBOARD) }
     PageLink(Icons.Filled.TouchApp, "Bottom bar", s.bottomBar.joinToString(", ") { it.title }) { vm.openSettingsPage(SettingsPage.BOTTOM_BAR) }
+    PageLink(Icons.Filled.SwapVert, "Connection", "Pointer movement over ${s.transport.name}") { vm.openSettingsPage(SettingsPage.CONNECTION) }
     PageLink(Icons.Filled.Tune, "General", "Vibration, keep screen on") { vm.openSettingsPage(SettingsPage.GENERAL) }
 
     Section("About")
@@ -274,6 +280,39 @@ private fun BarButtonRow(button: BarButton, controls: @Composable () -> Unit) {
             Text(button.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         controls()
+    }
+}
+
+@Composable
+private fun ConnectionSettings(vm: AppViewModel, s: AppSettings) {
+    val conn by vm.conn.collectAsStateWithLifecycle()
+
+    Section("Pointer movement and scrolling")
+    Column(Modifier.selectableGroup()) {
+        RadioSetting(
+            "TCP",
+            "Everything shares one connection that resends whatever the network drops. On weak Wi-Fi the pointer can freeze for a moment while it does.",
+            selected = s.transport == Transport.TCP,
+        ) { vm.updateSettings { it.copy(transport = Transport.TCP) } }
+        RadioSetting(
+            "UDP",
+            "Movement is sent without waiting for resends, so the pointer keeps up on weak Wi-Fi. A dropped packet loses a little movement instead.",
+            selected = s.transport == Transport.UDP,
+        ) { vm.updateSettings { it.copy(transport = Transport.UDP) } }
+    }
+    Help("Clicks, keys and text always use TCP, so none of them can get lost. Both are encrypted.")
+
+    if (s.transport == Transport.UDP) {
+        Section("Status")
+        val connected = conn as? ConnState.Connected
+        Help(
+            when {
+                connected == null -> "Used from the next time you connect. If UDP can't get through, the app carries on with TCP."
+                connected.udp -> "Pointer movement to ${connected.pc.name} is going over UDP."
+                else -> "Waiting for ${connected.pc.name} to answer over UDP. Until it does, pointer movement uses TCP.\n" +
+                    "If this stays, update RomCon on the PC and check that Windows Firewall lets it receive UDP on port ${connected.pc.port}."
+            },
+        )
     }
 }
 

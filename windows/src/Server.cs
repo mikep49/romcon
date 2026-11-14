@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -22,6 +23,24 @@ namespace RomCon
         public string DeviceName;
         public DateTime ConnectedAt;
         readonly object writeLock = new object();
+
+        /// <summary>Set once the phone asks to send pointer movement over UDP.</summary>
+        public volatile PointerChannel Pointer;
+
+        // Pointer movement that came by UDP ahead of a click or key still on its way over TCP waits here,
+        // so input is applied in the order the phone sent it.
+        sealed class Held
+        {
+            public uint After;
+            public byte Type;
+            public int A, B;
+        }
+
+        const int MaxHeld = 256;
+        readonly object order = new object();
+        readonly Queue<Held> held = new Queue<Held>();
+        Held lastHeld;
+        uint framesHandled;
 
         public ClientSession(TcpClient tcp, SslStream stream, string address, InputState input)
         {
@@ -51,21 +70,71 @@ namespace RomCon
         {
             try { Tcp.Close(); } catch { }
         }
+
+        /// <summary>Call after each TCP frame is dealt with. Releases the UDP movement that was waiting for it.</summary>
+        public void FrameHandled(Action<byte, int, int> apply)
+        {
+            lock (order)
+            {
+                framesHandled++;
+                while (held.Count > 0 && held.Peek().After <= framesHandled)
+                {
+                    Held h = held.Dequeue();
+                    apply(h.Type, h.A, h.B);
+                }
+            }
+        }
+
+        /// <summary>
+        /// A movement or scroll from a datagram the phone sent after its first <paramref name="after"/> TCP frames.
+        /// It's applied now if those frames have been handled, and otherwise as soon as they are.
+        /// </summary>
+        public void FromUdp(uint after, byte type, int a, int b, Action<byte, int, int> apply)
+        {
+            lock (order)
+            {
+                // Everything still held is waiting for a later frame than this, so nothing is overtaken.
+                if (after <= framesHandled)
+                {
+                    apply(type, a, b);
+                    return;
+                }
+                if (held.Count > 0)
+                {
+                    if (after < lastHeld.After) after = lastHeld.After; // a late datagram doesn't jump the queue
+                    if (after == lastHeld.After && type == lastHeld.Type)
+                    {
+                        lastHeld.A += a;
+                        lastHeld.B += b;
+                        return;
+                    }
+                    if (held.Count >= MaxHeld) return;
+                }
+                lastHeld = new Held { After = after, Type = type, A = a, B = b };
+                held.Enqueue(lastHeld);
+            }
+        }
     }
 
-    /// <summary>Accepts phones over TLS, checks they are paired, and feeds their input to Windows.</summary>
+    /// <summary>
+    /// Accepts phones over TLS, checks they are paired, and feeds their input to Windows.
+    /// A phone may also send pointer movement over UDP on the same port number (see PointerChannel).
+    /// </summary>
     sealed class RemoteServer
     {
         const int HandshakeTimeoutMs = 15000;
         const int HelloTimeoutMs = 120000; // the phone may still be waiting for the user to type the PIN
         const int IdleTimeoutMs = 20000;   // phones ping every few seconds
+        const int UdpSyncWaitMs = 40;      // how long a click or key waits for a datagram sent just before it
 
         readonly Config config;
         readonly X509Certificate2 certificate;
         readonly InputInjector injector;
         readonly List<ClientSession> sessions = new List<ClientSession>();
+        readonly Dictionary<uint, ClientSession> pointerChannels = new Dictionary<uint, ClientSession>();
         TcpListener listener;
         UdpClient discovery;
+        UdpClient pointerSocket;
         volatile bool running;
         volatile bool paused;
 
@@ -137,6 +206,7 @@ namespace RomCon
             }
             Log.Info("Listening on port " + config.Port + ".");
             new Thread(AcceptLoop) { IsBackground = true, Name = "accept" }.Start();
+            StartPointerSocket();
             StartDiscovery();
         }
 
@@ -145,6 +215,7 @@ namespace RomCon
             running = false;
             try { listener?.Stop(); } catch { }
             try { discovery?.Close(); } catch { }
+            try { pointerSocket?.Close(); } catch { }
             foreach (var s in Sessions) s.Close();
         }
 
@@ -259,6 +330,7 @@ namespace RomCon
                     while ((frame = FrameIO.Read(ssl)) != null)
                     {
                         Dispatch(session, frame);
+                        session.FrameHandled(ApplyPointer);
                     }
                 }
             }
@@ -283,6 +355,12 @@ namespace RomCon
                 tcp.Close();
                 if (session != null)
                 {
+                    PointerChannel channel = session.Pointer;
+                    if (channel != null)
+                    {
+                        lock (pointerChannels) pointerChannels.Remove(channel.Id);
+                        channel.Dispose();
+                    }
                     session.Input.ReleaseAll();
                     lock (sessions) sessions.Remove(session);
                     Log.Info(session.DeviceName + " disconnected.");
@@ -305,12 +383,24 @@ namespace RomCon
                 s.Send(new FrameBuilder(Proto.Pong).Build());
                 return;
             }
+            if (f.Type == Proto.UdpRequest)
+            {
+                OfferPointerChannel(s);
+                return;
+            }
+            if (f.Type == Proto.UdpSync)
+            {
+                // Movement the phone sent by UDP before its next frame here should be applied before that frame.
+                s.Pointer?.WaitFor(f.U64(), UdpSyncWaitMs);
+                return;
+            }
             if (paused) return;
 
             switch (f.Type)
             {
                 case Proto.MouseMove:
-                    injector.Move(f.I16(), f.I16());
+                case Proto.Scroll:
+                    ApplyPointer(f.Type, f.I16(), f.I16());
                     break;
                 case Proto.MouseButton:
                     {
@@ -318,9 +408,6 @@ namespace RomCon
                         s.Input.Button(button, f.U8() != 0);
                         break;
                     }
-                case Proto.Scroll:
-                    injector.Wheel(f.I16(), f.I16());
-                    break;
                 case Proto.Text:
                     injector.Text(f.Str());
                     break;
@@ -344,6 +431,159 @@ namespace RomCon
                     if (f.U8() == Proto.CmdLock) injector.LockPc();
                     break;
                 // Unknown types are ignored so newer phones can talk to older PCs.
+            }
+        }
+
+        void ApplyPointer(byte type, int a, int b)
+        {
+            if (paused) return;
+            if (type == Proto.MouseMove) injector.Move(a, b);
+            else injector.Wheel(a, b);
+        }
+
+        // ---------- Pointer movement over UDP ----------
+
+        void StartPointerSocket()
+        {
+            if (!Gcm.TryInit(out string error))
+            {
+                Log.Info("UDP is off (" + error + "). Phones will use TCP for everything.");
+                return;
+            }
+            try
+            {
+                pointerSocket = BindPointerSocket(AddressFamily.InterNetworkV6);
+            }
+            catch (SocketException)
+            {
+                try
+                {
+                    pointerSocket = BindPointerSocket(AddressFamily.InterNetwork);
+                }
+                catch (SocketException ex)
+                {
+                    Log.Info("UDP is off (UDP port " + config.Port + " unavailable: " + ex.Message + "). Phones will use TCP for everything.");
+                    return;
+                }
+            }
+            new Thread(PointerLoop) { IsBackground = true, Name = "pointer" }.Start();
+        }
+
+        UdpClient BindPointerSocket(AddressFamily family)
+        {
+            var udp = new UdpClient(family);
+            try
+            {
+                bool v6 = family == AddressFamily.InterNetworkV6;
+                if (v6) udp.Client.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+                // Stop Windows from failing the next Receive when a phone has gone away.
+                const int SIO_UDP_CONNRESET = -1744830452;
+                udp.Client.IOControl(SIO_UDP_CONNRESET, new byte[] { 0 }, null);
+                udp.Client.Bind(new IPEndPoint(v6 ? IPAddress.IPv6Any : IPAddress.Any, config.Port));
+                return udp;
+            }
+            catch
+            {
+                udp.Close();
+                throw;
+            }
+        }
+
+        /// <summary>Answers a phone that wants to send pointer movement over UDP with a channel id and key.</summary>
+        void OfferPointerChannel(ClientSession s)
+        {
+            if (pointerSocket == null) return; // no answer: the phone keeps using TCP
+            PointerChannel channel = s.Pointer;
+            if (channel == null)
+            {
+                var id = new byte[4];
+                using (var rng = RandomNumberGenerator.Create())
+                {
+                    lock (pointerChannels)
+                    {
+                        uint n;
+                        do
+                        {
+                            rng.GetBytes(id);
+                            n = BitConverter.ToUInt32(id, 0);
+                        }
+                        while (n == 0 || pointerChannels.ContainsKey(n));
+                        channel = new PointerChannel(n);
+                        s.Pointer = channel;
+                        pointerChannels[n] = s;
+                    }
+                }
+            }
+            s.Send(new FrameBuilder(Proto.UdpOffer).U16(config.Port).U32(channel.Id).Bytes(channel.Secret).Build());
+        }
+
+        void PointerLoop()
+        {
+            while (running)
+            {
+                try
+                {
+                    var from = new IPEndPoint(IPAddress.Any, 0);
+                    HandleDatagram(pointerSocket.Receive(ref from));
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                catch (SocketException)
+                {
+                    if (!running) return;
+                }
+                catch (Exception)
+                {
+                    // A datagram that decrypted but didn't parse. Drop it.
+                }
+            }
+        }
+
+        void HandleDatagram(byte[] packet)
+        {
+            if (packet.Length < Proto.UdpNonceSize + 4 + Proto.UdpTagSize) return;
+            uint id = ((uint)packet[0] << 24) | ((uint)packet[1] << 16) | ((uint)packet[2] << 8) | packet[3];
+            ClientSession s;
+            lock (pointerChannels)
+            {
+                if (!pointerChannels.TryGetValue(id, out s)) return;
+            }
+            PointerChannel channel = s.Pointer;
+            byte[] plain = channel.Open(packet, out ulong counter);
+            if (plain == null) return;
+            if (!channel.Seen)
+            {
+                channel.Seen = true;
+                Log.Info(s.DeviceName + " is sending pointer movement over UDP.");
+            }
+
+            try
+            {
+                // The phone had sent this many TCP frames before the datagram; what it carries comes after them.
+                uint after = ((uint)plain[0] << 24) | ((uint)plain[1] << 16) | ((uint)plain[2] << 8) | plain[3];
+                var frames = new MemoryStream(plain, 4, plain.Length - 4, false);
+                Frame f;
+                while ((f = FrameIO.Read(frames)) != null)
+                {
+                    switch (f.Type)
+                    {
+                        case Proto.Ping:
+                            // Answered over TCP, so the phone knows its datagrams arrive. Off this thread: a stalled
+                            // TCP link to one phone mustn't hold up the datagrams of another.
+                            ThreadPool.QueueUserWorkItem(_ => s.Send(new FrameBuilder(Proto.UdpPong).Build()));
+                            break;
+                        case Proto.MouseMove:
+                        case Proto.Scroll:
+                            s.FromUdp(after, f.Type, f.I16(), f.I16(), ApplyPointer);
+                            break;
+                    }
+                }
+            }
+            finally
+            {
+                channel.Processed(counter);
             }
         }
 
