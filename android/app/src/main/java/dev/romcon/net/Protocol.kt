@@ -18,6 +18,8 @@ object Proto {
     // Phone -> PC
     const val HELLO = 0x01
     const val PING = 0x02
+    const val UDP_REQUEST = 0x03
+    const val UDP_SYNC = 0x04
     const val MOUSE_MOVE = 0x10
     const val MOUSE_BUTTON = 0x11
     const val SCROLL = 0x12
@@ -31,6 +33,13 @@ object Proto {
     const val REJECTED = 0x82
     const val PONG = 0x83
     const val STATUS = 0x84
+    const val UDP_OFFER = 0x85
+    const val UDP_PONG = 0x86
+
+    // A datagram is [u32 channel id][u64 counter][AES-256-GCM ciphertext][16-byte tag].
+    const val UDP_KEY_SIZE = 32
+    const val UDP_NONCE_SIZE = 12
+    const val UDP_TAG_BITS = 128
 
     const val AUTH_TOKEN = 0
     const val AUTH_PIN = 1
@@ -76,6 +85,10 @@ class FrameBuilder(type: Int) {
         out.write(v and 0xFF)
     }
 
+    fun u64(v: Long) = apply {
+        for (shift in 56 downTo 0 step 8) out.write((v ushr shift).toInt() and 0xFF)
+    }
+
     fun str(s: String) = apply {
         val b = s.toByteArray(Charsets.UTF_8)
         require(b.size <= 0xFFFF) { "string too long" }
@@ -101,6 +114,13 @@ class Frame(val type: Int, private val data: ByteArray) {
     }
 
     fun u16(): Int = (u8() shl 8) or u8()
+
+    fun u32(): Int = (u16() shl 16) or u16()
+
+    fun bytes(n: Int): ByteArray {
+        if (pos + n > data.size) throw IOException("frame too short")
+        return data.copyOfRange(pos, pos + n).also { pos += n }
+    }
 
     fun str(): String {
         val n = u16()

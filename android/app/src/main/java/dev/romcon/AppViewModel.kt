@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import dev.romcon.data.AppSettings
 import dev.romcon.data.SavedPc
 import dev.romcon.data.Store
+import dev.romcon.data.Transport
 import dev.romcon.input.Latch
 import dev.romcon.input.ModKey
 import dev.romcon.input.TypedLine
@@ -37,12 +38,13 @@ import kotlin.coroutines.resume
 enum class Screen { HOME, CONTROL, SETTINGS }
 
 /** A page inside Settings; the settings list itself is shown when none is open. */
-enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, BOTTOM_BAR, GENERAL }
+enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, BOTTOM_BAR, CONNECTION, GENERAL }
 
 sealed interface ConnState {
     data object Idle : ConnState
     data class Connecting(val pc: SavedPc, val attempt: Int, val lastError: String?) : ConnState
-    data class Connected(val pc: SavedPc, val pcPaused: Boolean) : ConnState
+    /** [udp] is true while pointer movement is going over UDP; it starts on TCP and switches once the PC confirms. */
+    data class Connected(val pc: SavedPc, val pcPaused: Boolean, val udp: Boolean = false) : ConnState
 
     /** Needs the user: the PC forgot this phone, its identity changed, or versions don't match. */
     data class Failed(val pc: SavedPc, val kind: FailKind, val message: String) : ConnState
@@ -319,9 +321,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun awaitClose(s: RemoteSession): RemoteException = suspendCancellableCoroutine { cont ->
+        s.preferUdp = _settings.value.transport == Transport.UDP
         s.start(object : RemoteSession.Listener {
             override fun onStatus(pcPaused: Boolean) {
                 _conn.update { if (it is ConnState.Connected) it.copy(pcPaused = pcPaused) else it }
+            }
+
+            override fun onUdp(active: Boolean) {
+                if (session === s) _conn.update { if (it is ConnState.Connected) it.copy(udp = active) else it }
             }
 
             override fun onClosed(error: RemoteException) {
@@ -389,6 +396,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _settings.update(transform)
         store.saveSettings(_settings.value)
         if (!_settings.value.typingPreview) typed = TypedLine.EMPTY
+        val udp = _settings.value.transport == Transport.UDP
+        session?.let { if (it.preferUdp != udp) it.preferUdp = udp }
     }
 
     // ---------- Input ----------

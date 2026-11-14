@@ -31,6 +31,7 @@ Control a Windows PC from an Android phone: a trackpad, a keyboard, shortcuts an
 - PCs on the same Wi-Fi show up automatically.
 - Over Tailscale (or any routed network), add the PC by its 100.x address or MagicDNS name.
 - If the phone is on the PC's Wi-Fi it uses the faster LAN path, and it follows the PC when the router gives it a new address.
+- Pointer movement and scrolling can go over UDP instead of TCP (Settings, Connection), which keeps the pointer smooth on weak Wi-Fi. Clicks, keys and text always use TCP. If UDP can't get through, the app carries on with TCP.
 - Reconnects automatically. When the app goes to the background it disconnects, and the PC releases any held keys or buttons.
 - *Lock PC* button, *Pause remote control* on the PC, and a notification when a phone connects.
 
@@ -84,7 +85,7 @@ If the phone can't reach the PC over Tailscale, check that Windows Firewall allo
 ## Security
 
 - **Pairing is required.** A phone can only control the PC after you pair it with a PIN that's shown on the PC screen. The PIN works once and expires after 3 minutes. Pairing closes after 5 wrong attempts. Pairing is only open while you have it turned on.
-- **Encrypted.** All traffic is TLS 1.2. The PC makes its own certificate on first run (stored DPAPI-encrypted in `%APPDATA%\RomCon`). The phone pins that certificate when pairing and refuses any other, so a device impersonating the PC never sees your keystrokes. The matching *PC code* on both screens guards the first pairing.
+- **Encrypted.** All TCP traffic is TLS 1.2, and pointer movement sent over UDP is AES-256-GCM with a key the PC issues over that TLS connection. The PC makes its own certificate on first run (stored DPAPI-encrypted in `%APPDATA%\RomCon`). The phone pins that certificate when pairing and refuses any other, so a device impersonating the PC never sees your keystrokes. The matching *PC code* on both screens guards the first pairing.
 - **Revocable.** Each phone gets its own random token. The PC stores only a hash of it, and removing the phone on the PC revokes it at once. Tokens are kept in the app's private storage and excluded from Android backups.
 
 ## Limitations (Windows rules, not bugs)
@@ -101,7 +102,7 @@ If the phone can't reach the PC over Tailscale, check that Windows Firewall allo
 | --- | --- |
 | `--dry-run` | Log input instead of sending it to Windows. Also logs the pairing PIN. |
 | `--data-dir <dir>` | Use another settings folder instead of `%APPDATA%\RomCon`. |
-| `--port <n>` | Listen on another TCP port (the permanent setting is `port=` in `settings.ini`). |
+| `--port <n>` | Listen on another port, TCP and UDP (the permanent setting is `port=` in `settings.ini`). |
 | `--minimized` | Start in the tray (used by *Start with Windows*). |
 
 The Android unit tests include `LiveServerTest`, which pairs with and drives a real PC server through the app's own networking code. It's skipped unless you point it at one:
@@ -114,4 +115,4 @@ $env:ROMCON_TEST_HOST="127.0.0.1"; $env:ROMCON_TEST_PORT="50599"; $env:ROMCON_TE
 .\gradlew.bat testDebugUnitTest
 ```
 
-Ports: TCP **50505** for control, UDP **50506** for discovery.
+Ports: TCP **50505** for control, UDP **50505** for pointer movement when the phone is set to UDP, UDP **50506** for discovery.

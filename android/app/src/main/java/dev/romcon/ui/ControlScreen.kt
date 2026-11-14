@@ -226,7 +226,11 @@ private fun ControlTopBar(conn: ConnState, vm: AppViewModel, onSendText: () -> U
     val (name, status, color) = when (conn) {
         is ConnState.Connected -> Triple(
             conn.pc.name,
-            if (conn.pcPaused) "Paused on the PC" else "Connected",
+            when {
+                conn.pcPaused -> "Paused on the PC"
+                conn.udp -> "Connected · UDP"
+                else -> "Connected"
+            },
             if (conn.pcPaused) Color(0xFFE0A100) else Color(0xFF22A55B),
         )
         is ConnState.Connecting -> Triple(conn.pc.name, if (conn.attempt == 0) "Connecting…" else "Reconnecting…", Color(0xFFE0A100))

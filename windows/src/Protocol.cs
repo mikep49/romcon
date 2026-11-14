@@ -17,6 +17,8 @@ namespace RomCon
         // Phone -> PC
         public const byte Hello = 0x01;
         public const byte Ping = 0x02;
+        public const byte UdpRequest = 0x03;
+        public const byte UdpSync = 0x04;
         public const byte MouseMove = 0x10;
         public const byte MouseButton = 0x11;
         public const byte Scroll = 0x12;
@@ -30,6 +32,13 @@ namespace RomCon
         public const byte Rejected = 0x82;
         public const byte Pong = 0x83;
         public const byte Status = 0x84;
+        public const byte UdpOffer = 0x85;
+        public const byte UdpPong = 0x86;
+
+        // A datagram is [u32 channel id][u64 counter][AES-256-GCM ciphertext][16-byte tag].
+        public const int UdpKeySize = 32;
+        public const int UdpNonceSize = 12;
+        public const int UdpTagSize = 16;
 
         public const byte AuthToken = 0;
         public const byte AuthPin = 1;
@@ -80,6 +89,10 @@ namespace RomCon
         public ushort U16() => (ushort)((U8() << 8) | U8());
 
         public short I16() => (short)U16();
+
+        public uint U32() => ((uint)U16() << 16) | U16();
+
+        public ulong U64() => ((ulong)U32() << 32) | U32();
 
         public string Str()
         {
@@ -146,6 +159,19 @@ namespace RomCon
         {
             ms.WriteByte((byte)(v >> 8));
             ms.WriteByte((byte)v);
+            return this;
+        }
+
+        public FrameBuilder U32(uint v)
+        {
+            U16((int)(v >> 16));
+            U16((int)(v & 0xFFFF));
+            return this;
+        }
+
+        public FrameBuilder Bytes(byte[] b)
+        {
+            ms.Write(b, 0, b.Length);
             return this;
         }
 

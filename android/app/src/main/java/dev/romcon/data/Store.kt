@@ -23,6 +23,12 @@ data class SavedPc(
 enum class ThemeMode { SYSTEM, LIGHT, DARK, OLED }
 
 /**
+ * How pointer movement and scrolling reach the PC: on the TCP connection with everything else, or as UDP
+ * datagrams beside it. Clicks, keys and text always use TCP, where nothing is lost.
+ */
+enum class Transport { TCP, UDP }
+
+/**
  * A button that can sit on the bar under the trackpad. The names are saved in preferences, so don't rename them.
  * [label] is the short text under the icon; [title] and [summary] describe it in Settings.
  */
@@ -77,6 +83,7 @@ data class AppSettings(
     val typingPreview: Boolean = true,
     val haptics: Boolean = true,
     val keepScreenOn: Boolean = true,
+    val transport: Transport = Transport.TCP,
 )
 
 /** Everything lives in app-private storage, and backups are disabled in the manifest so tokens never leave the phone. */
@@ -156,6 +163,7 @@ class Store(context: Context) {
             typingPreview = prefs.getBoolean("typingPreview", d.typingPreview),
             haptics = prefs.getBoolean("haptics", d.haptics),
             keepScreenOn = prefs.getBoolean("keepScreenOn", d.keepScreenOn),
+            transport = prefs.getString("transport", null)?.let { name -> Transport.entries.firstOrNull { it.name == name } } ?: d.transport,
         )
     }
 
@@ -175,6 +183,7 @@ class Store(context: Context) {
             putBoolean("typingPreview", s.typingPreview)
             putBoolean("haptics", s.haptics)
             putBoolean("keepScreenOn", s.keepScreenOn)
+            putString("transport", s.transport.name)
         }
     }
 }

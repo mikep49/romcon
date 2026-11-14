@@ -7,6 +7,7 @@ import java.io.EOFException
 import java.io.IOException
 import java.io.OutputStream
 import java.net.ConnectException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NoRouteToHostException
 import java.net.Socket
@@ -33,11 +34,17 @@ data class Welcome(val serverName: String, val token: String)
  * One TLS connection to a RomCon PC. Blocking calls: run [open] and [hello] off the main thread.
  * After [start], input calls only queue messages; a writer thread sends them, merging mouse moves
  * when the network falls behind, and pings so both ends notice a dead link.
+ *
+ * With [preferUdp] on, pointer movement and scrolling leave as datagrams through a [PointerChannel] once
+ * the PC has shown that it receives them. Everything else, and all of it until then, uses the TLS connection.
  */
-class RemoteSession private constructor(private val socket: SSLSocket, val fingerprint: String) : Closeable {
+class RemoteSession private constructor(private val socket: SSLSocket, private val address: InetAddress, val fingerprint: String) : Closeable {
 
     interface Listener {
         fun onStatus(pcPaused: Boolean)
+
+        /** Pointer movement switched to UDP ([active]) or back to the TCP connection. */
+        fun onUdp(active: Boolean) {}
 
         /** The connection died on its own (not through [close]). */
         fun onClosed(error: RemoteException)
@@ -47,12 +54,40 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
         class Move(var dx: Int, var dy: Int) : Out
         class Scroll(var vertical: Int, var horizontal: Int) : Out
         class Raw(val bytes: ByteArray) : Out
+
+        /** Nothing to send; gets the writer to look at the UDP state again. */
+        data object Wake : Out
     }
 
     private val input = BufferedInputStream(socket.inputStream)
     private val queue = LinkedBlockingQueue<Out>()
     private val closed = AtomicBoolean(false)
     private var listener: Listener? = null
+
+    @Volatile private var pointer: PointerChannel? = null
+    private val udpRequested = AtomicBoolean(false)
+    @Volatile private var udpActive = false
+
+    /** When the PC last confirmed a datagram, in [System.nanoTime]; 0 for never. */
+    @Volatile private var lastUdpPong = 0L
+    @Volatile private var lastUdpProbe = 0L
+
+    /** TCP frames written since HELLO. The PC counts them too, to put datagrams in order with them. */
+    @Volatile private var tcpFrames = 0
+
+    /** Datagrams have gone out since the last UDP_SYNC. Only the writer thread uses it. */
+    private var unsynced = false
+
+    /** Send pointer movement and scrolling over UDP when the PC can take it. Safe to change while connected. */
+    @Volatile var preferUdp = false
+        set(value) {
+            field = value
+            if (value) {
+                if (udpRequested.compareAndSet(false, true)) raw(FrameBuilder(Proto.UDP_REQUEST))
+                lastUdpProbe = 0L
+            }
+            offer(Out.Wake)
+        }
 
     val isOpen: Boolean get() = !closed.get()
 
@@ -61,6 +96,10 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
         private const val HELLO_TIMEOUT_MS = 15000
         private const val READ_TIMEOUT_MS = 12000
         private const val PING_INTERVAL_MS = 2500L
+        private const val PING_INTERVAL_NS = PING_INTERVAL_MS * 1_000_000
+
+        /** With no confirmed datagram for this long, pointer movement goes back to TCP. */
+        private const val UDP_DEAD_NS = 3 * PING_INTERVAL_NS
         private const val TEXT_CHUNK = 1000
         private val PING = FrameBuilder(Proto.PING).build()
 
@@ -80,7 +119,7 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
                 val ssl = context.socketFactory.createSocket(raw, host, port, true) as SSLSocket
                 ssl.soTimeout = HELLO_TIMEOUT_MS
                 ssl.startHandshake()
-                return RemoteSession(ssl, trust.seen ?: throw RemoteException(FailKind.PROTOCOL, "The PC sent no certificate."))
+                return RemoteSession(ssl, raw.inetAddress, trust.seen ?: throw RemoteException(FailKind.PROTOCOL, "The PC sent no certificate."))
             } catch (e: RemoteException) {
                 raw.closeQuietly()
                 throw e
@@ -191,6 +230,7 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
             // Closing a TLS socket sends a close_notify alert. That is network I/O, which Android
             // forbids on the main thread (NetworkOnMainThreadException), so it happens off the caller's thread.
             Thread({
+                pointer?.close()
                 try {
                     socket.close()
                 } catch (_: IOException) {
@@ -207,6 +247,7 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
 
     private fun fail(e: Throwable) {
         if (closed.compareAndSet(false, true)) {
+            pointer?.close()
             try {
                 socket.close()
             } catch (_: IOException) {
@@ -230,11 +271,17 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
                 }
                 writeBatch(out, batch)
                 val now = System.nanoTime()
-                if (now - lastPing >= PING_INTERVAL_MS * 1_000_000) {
-                    out.write(PING)
+                if (now - lastPing >= PING_INTERVAL_NS) {
+                    write(out, PING)
                     lastPing = now
                 }
                 out.flush()
+                val channel = pointer
+                if (channel != null && preferUdp && now - lastUdpProbe >= PING_INTERVAL_NS) {
+                    probe(channel)
+                    lastUdpProbe = now
+                }
+                refreshUdp()
             }
         } catch (_: InterruptedException) {
             fail(EOFException())
@@ -274,8 +321,10 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
                 is Out.Raw -> {
                     flushMove()
                     flushScroll()
-                    out.write(item.bytes)
+                    syncUdp(out)
+                    write(out, item.bytes)
                 }
+                Out.Wake -> Unit
             }
         }
         flushMove()
@@ -289,9 +338,82 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
         while (x != 0 || y != 0) {
             val sx = x.coerceIn(-32767, 32767)
             val sy = y.coerceIn(-32767, 32767)
-            out.write(FrameBuilder(type).u16(sx).u16(sy).build())
+            writePointer(out, FrameBuilder(type).u16(sx).u16(sy).build())
             x -= sx
             y -= sy
+        }
+    }
+
+    private fun write(out: OutputStream, frame: ByteArray) {
+        out.write(frame)
+        tcpFrames++
+    }
+
+    /** A movement or scroll frame: by UDP while that works, otherwise over TCP like everything else. */
+    private fun writePointer(out: OutputStream, frame: ByteArray) {
+        val channel = pointer
+        if (channel != null && udpActive) {
+            // The PC holds a datagram back until it has the TCP frames written before it, so get those moving first.
+            out.flush()
+            try {
+                channel.send(tcpFrames, frame)
+                unsynced = true
+                return
+            } catch (_: IOException) {
+                lastUdpPong = 0L
+                refreshUdp()
+            }
+        }
+        write(out, frame)
+    }
+
+    /**
+     * Before a click, key or text that follows movement sent by UDP: names the last datagram, so the PC can
+     * apply that movement first even if the TCP frame gets there ahead of it.
+     */
+    private fun syncUdp(out: OutputStream) {
+        val channel = pointer ?: return
+        if (!unsynced) return
+        unsynced = false
+        write(out, FrameBuilder(Proto.UDP_SYNC).u64(channel.sent).build())
+    }
+
+    /** The PC answers a datagram ping with UDP_PONG over TCP, which is how the phone knows datagrams arrive. */
+    private fun probe(channel: PointerChannel) {
+        try {
+            channel.send(tcpFrames, PING)
+        } catch (_: IOException) {
+        }
+    }
+
+    private fun openPointerChannel(offer: Frame) {
+        val port = offer.u16()
+        val id = offer.u32()
+        val key = offer.bytes(Proto.UDP_KEY_SIZE)
+        if (pointer != null) return
+        val channel = try {
+            PointerChannel(address, port, id, key)
+        } catch (_: IOException) {
+            return
+        }
+        pointer = channel
+        if (closed.get()) {
+            channel.close()
+            return
+        }
+        // Twice, in case the network drops the first one; the writer keeps probing after that.
+        probe(channel)
+        probe(channel)
+    }
+
+    /** Works out whether pointer movement should use UDP right now and tells the listener when that changes. */
+    @Synchronized
+    private fun refreshUdp() {
+        val pong = lastUdpPong
+        val active = preferUdp && pointer != null && pong != 0L && System.nanoTime() - pong < UDP_DEAD_NS
+        if (active != udpActive) {
+            udpActive = active
+            listener?.onUdp(active)
         }
     }
 
@@ -303,6 +425,11 @@ class RemoteSession private constructor(private val socket: SSLSocket, val finge
                 when (frame.type) {
                     Proto.STATUS -> listener?.onStatus(frame.u8() != 0)
                     Proto.PONG -> Unit
+                    Proto.UDP_OFFER -> openPointerChannel(frame)
+                    Proto.UDP_PONG -> {
+                        lastUdpPong = System.nanoTime()
+                        refreshUdp()
+                    }
                 }
             }
         } catch (e: SocketTimeoutException) {
