@@ -1,118 +1,71 @@
 # RomCon
 
-Control a Windows PC from an Android phone: a trackpad, a keyboard, shortcuts and media keys, over your Wi-Fi or over Tailscale.
+Use your Android phone as a wireless trackpad and keyboard for a Windows PC. It works over your Wi-Fi, or from anywhere over Tailscale.
 
-- **Windows app**: a ~175 KB tray app with no installer and no runtime to install. It uses the .NET Framework 4.8 that ships with Windows 10 and 11.
-- **Android app**: Kotlin and Jetpack Compose, Android 8.0 and newer.
+RomCon is two small apps:
 
-## Features
+- **The Windows app** sits in the tray and turns what the phone sends into mouse and keyboard input. It's a single exe of about 180 KB with no installer. It runs on Windows 10 and 11 as they come.
+- **The Android app** is the remote: a trackpad, your phone keyboard, and buttons for shortcuts and media keys. It needs Android 8.0 or newer.
 
-**Trackpad**
-- One finger moves the pointer, with adjustable speed and acceleration.
-- Tap to left-click, two-finger tap to right-click, three-finger tap to middle-click.
-- Two-finger scroll, vertical and horizontal, with momentum and a natural/traditional switch.
-- Double-tap and drag to drag (selecting text, moving windows), like a laptop touchpad.
-- A scroll bar down the right side of the pad: slide one finger along it to scroll.
+<p align="center">
+  <img src="docs/images/phone-trackpad.png" width="250" alt="The phone app connected to a PC: a trackpad with a scroll bar, and Keyboard, Windows and Shortcuts buttons below">
+  &nbsp;&nbsp;
+  <img src="docs/images/phone-shortcuts.png" width="250" alt="The phone app with the Shortcuts panel open: Ctrl, Alt, Shift and Win keys, and buttons such as Copy, Paste and Switch app">
+</p>
+<p align="center"><em>The phone app: the trackpad, and the shortcuts panel.</em></p>
 
-**Bottom bar**
-- Keyboard, Windows key and Shortcuts sit under the pad by default.
-- Choose your own buttons, up to five, and their order in Settings: Keys, Send text, Switch app, Task View, Show desktop, Esc, Enter, Copy, Paste, play/pause, volume, and Left / Right / Middle click (hold one and move with another finger to drag).
+<p align="center">
+  <img src="docs/images/windows-app.png" width="720" alt="The RomCon window on the PC, showing a paired phone and the addresses a phone can connect to">
+</p>
+<p align="center"><em>The Windows app.</em></p>
 
-**Keyboard**
-- The phone keyboard types straight into the PC. Autocorrect is off and Backspace always reaches the PC.
-- Text is sent as Unicode, so accents, other scripts and emoji work whatever the PC's keyboard layout is.
-- Ctrl, Alt, Shift and Win latches: tap one for the next key, long-press to lock it.
-- Keys panel: Esc, Tab, arrows (hold to repeat), Home/End, PgUp/PgDn, Delete, F1–F12, media and volume keys.
-- Shortcuts: copy, paste, undo, Alt+Tab (tap again to move through windows), Task View, Show desktop, Task Manager, close window, snip, and more.
-- *Send text* types a whole block at once (links, passwords, pasted text).
-- A hardware keyboard paired to the phone works too.
+## What it does
 
-**Connection**
-- PCs on the same Wi-Fi show up automatically.
-- Over Tailscale (or any routed network), add the PC by its 100.x address or MagicDNS name.
-- If the phone is on the PC's Wi-Fi it uses the faster LAN path, and it follows the PC when the router gives it a new address.
-- Pointer movement and scrolling can go over UDP instead of TCP (Settings, Connection), which keeps the pointer smooth on weak Wi-Fi. Clicks, keys and text always use TCP. If UDP can't get through, the app carries on with TCP.
-- Reconnects automatically. When the app goes to the background it disconnects, and the PC releases any held keys or buttons.
-- *Lock PC* button, *Pause remote control* on the PC, and a notification when a phone connects.
+- **Trackpad.** Move, tap to click, two-finger scroll, and double-tap and drag, like a laptop touchpad.
+- **Keyboard.** The phone keyboard types straight into the PC, in any language, emoji included. There are Ctrl, Alt, Shift and Win keys, arrows, F-keys and common shortcuts.
+- **Media and system.** Play/pause, volume, switch app, show desktop and lock the PC.
+- **A bar you choose.** Put up to five buttons you use most under the trackpad.
+- **Finds your PC.** A PC on the same Wi-Fi shows up by itself. Over Tailscale, add it by address.
+- **Private.** A phone has to be paired with a PIN shown on the PC, and everything it sends is encrypted.
 
-## Repository layout
+The [guide](docs/guide.md#features) lists every gesture, key and setting.
 
-```
-windows/          Windows tray app (C#, no project file needed)
-  build.ps1       builds windows\bin\RomCon.exe
-  src/            server, input injection, pairing, UI
-android/          Android app (Gradle, Kotlin, Compose)
-docs/protocol.md  wire protocol shared by both
-```
+## Getting started
 
-## Building
+### 1. Build the two apps
 
-### Windows
+There are no downloads yet, so you build both from this repository.
 
 ```powershell
+# Windows app: produces windows\bin\RomCon.exe
 powershell -ExecutionPolicy Bypass -File windows\build.ps1
-```
 
-This produces `windows\bin\RomCon.exe`. The script needs a Roslyn C# compiler: Visual Studio or *Build Tools for Visual Studio* (any edition with C#), or the .NET SDK. It finds either one automatically. The resulting exe runs on any Windows 10/11 PC as-is; copy it anywhere.
-
-### Android
-
-```powershell
+# Android app: produces android\app\build\outputs\apk\release\app-release.apk
 cd android
-$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"   # any JDK 21+
-.\gradlew.bat assembleRelease      # app\build\outputs\apk\release\app-release.apk
-.\gradlew.bat assembleDebug        # app\build\outputs\apk\debug\app-debug.apk
+.\gradlew.bat assembleRelease
 ```
 
-The release APK is minified and signed with the debug key so you can install it directly (`adb install`, or copy it to the phone). Use your own signing key before publishing it anywhere.
+The Windows build needs a C# compiler (Visual Studio, its Build Tools, or the .NET SDK). The Android build needs a JDK, version 21 or newer. [Building](docs/guide.md#building) has the details.
 
-## Using it
+### 2. Pair your phone
 
-1. **Run `RomCon.exe` on the PC.** On first launch it opens its window and starts pairing. Windows Firewall asks whether RomCon may use the network: allow it on **private** networks.
-2. **Open the app on the phone.** On the same Wi-Fi, the PC appears under *On this Wi-Fi*. Otherwise tap **Add by address** and enter an address from the PC window: the Wi-Fi IP, or the Tailscale IP or name.
-3. **Pair.** Check that the *PC code* in the app matches the one in the PC window, then type the 6-digit PIN shown on the PC. Pairing happens once per phone. Later, tap the PC to connect.
+1. **Run `RomCon.exe` on the PC.** The first time, it opens its window and starts pairing. When Windows Firewall asks, allow RomCon on **private** networks.
+2. **Open the app on the phone.** On the same Wi-Fi, the PC appears under *On this Wi-Fi*. Otherwise tap **Add by address** and enter one of the addresses shown in the PC window.
+3. **Pair.** Check that the *PC code* matches on both screens, then type the 6-digit PIN shown on the PC.
 
-To pair another phone later, click **Pair a new phone** in the PC window or the tray menu. To revoke a phone, click **Remove** next to it under *Paired phones*.
+You pair once per phone. After that, tap the PC in the app to connect.
 
-Closing the PC window keeps RomCon running in the tray. On the **Settings** tab, turn on **Start with Windows** to have it ready after every sign-in, and pick a theme: System default, Light, Dark or OLED black, the same choices as the phone app.
+Closing the PC window leaves RomCon running in the tray. Turn on **Start with Windows** on its Settings tab to have it ready after every sign-in.
 
-### Tailscale
+## Good to know
 
-Install Tailscale on both devices and sign them in to the same tailnet. On the phone, add the PC by its Tailscale IP (`100.x.y.z`) or MagicDNS name. Nothing else is needed: Tailscale already encrypts the link, and RomCon adds its own TLS and pairing on top. Broadcast discovery doesn't cross Tailscale, which is why you add the PC by address.
+Windows itself blocks a few things:
 
-If the phone can't reach the PC over Tailscale, check that Windows Firewall allows RomCon on the network profile Windows assigned to the Tailscale adapter.
+- **Lock screen and UAC prompts.** You can lock the PC from the phone, but you unlock it at the PC.
+- **Administrator windows**, such as Task Manager and installers. To control these, choose **Restart as administrator** in RomCon's tray menu.
+- **Some games** read the hardware directly and ignore RomCon's input.
 
-## Security
+## More
 
-- **Pairing is required.** A phone can only control the PC after you pair it with a PIN that's shown on the PC screen. The PIN works once and expires after 3 minutes. Pairing closes after 5 wrong attempts. Pairing is only open while you have it turned on.
-- **Encrypted.** All TCP traffic is TLS 1.2, and pointer movement sent over UDP is AES-256-GCM with a key the PC issues over that TLS connection. The PC makes its own certificate on first run (stored DPAPI-encrypted in `%APPDATA%\RomCon`). The phone pins that certificate when pairing and refuses any other, so a device impersonating the PC never sees your keystrokes. The matching *PC code* on both screens guards the first pairing.
-- **Revocable.** Each phone gets its own random token. The PC stores only a hash of it, and removing the phone on the PC revokes it at once. Tokens are kept in the app's private storage and excluded from Android backups.
-
-## Limitations (Windows rules, not bugs)
-
-- **Lock screen, UAC prompts, Ctrl+Alt+Del**: Windows blocks injected input on the secure desktop. Lock the PC from the phone, but unlock it at the PC.
-- **Admin windows** (Task Manager, installers, admin terminals): Windows ignores input from a normal app aimed at an elevated window. Use **Restart as administrator** in the tray menu or window when you need to control those.
-- Some games read raw hardware input and may ignore injected mouse or keyboard events.
-
-## Development
-
-`RomCon.exe` accepts:
-
-| Flag | Effect |
-| --- | --- |
-| `--dry-run` | Log input instead of sending it to Windows. Also logs the pairing PIN. |
-| `--data-dir <dir>` | Use another settings folder instead of `%APPDATA%\RomCon`. |
-| `--port <n>` | Listen on another port, TCP and UDP (the permanent setting is `port=` in `settings.ini`). |
-| `--minimized` | Start in the tray (used by *Start with Windows*). |
-
-The Android unit tests include `LiveServerTest`, which pairs with and drives a real PC server through the app's own networking code. It's skipped unless you point it at one:
-
-```powershell
-windows\bin\RomCon.exe --dry-run --data-dir $env:TEMP\romcon-test --port 50599
-# read the PIN from the RomCon window, then:
-cd android
-$env:ROMCON_TEST_HOST="127.0.0.1"; $env:ROMCON_TEST_PORT="50599"; $env:ROMCON_TEST_PIN="123456"
-.\gradlew.bat testDebugUnitTest
-```
-
-Ports: TCP **50505** for control, UDP **50505** for pointer movement when the phone is set to UDP, UDP **50506** for discovery.
+- [Guide](docs/guide.md): all features, building, Tailscale, security, and notes for developers.
+- [Protocol](docs/protocol.md): how the two apps talk to each other.
