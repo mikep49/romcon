@@ -36,7 +36,7 @@ import kotlin.coroutines.resume
 enum class Screen { HOME, CONTROL, SETTINGS }
 
 /** A page inside Settings; the settings list itself is shown when none is open. */
-enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, GENERAL }
+enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, BOTTOM_BAR, GENERAL }
 
 sealed interface ConnState {
     data object Idle : ConnState

@@ -12,7 +12,11 @@ Control a Windows PC from an Android phone: a trackpad, a keyboard, shortcuts an
 - Tap to left-click, two-finger tap to right-click, three-finger tap to middle-click.
 - Two-finger scroll, vertical and horizontal, with momentum and a natural/traditional switch.
 - Double-tap and drag to drag (selecting text, moving windows), like a laptop touchpad.
-- Left / Middle / Right buttons under the pad. Hold one and move with another finger.
+- A scroll bar down the right side of the pad: slide one finger along it to scroll.
+
+**Bottom bar**
+- Keyboard, Windows key and Shortcuts sit under the pad by default.
+- Choose your own buttons, up to five, and their order in Settings: Keys, Send text, Switch app, Task View, Show desktop, Esc, Enter, Copy, Paste, play/pause, volume, and Left / Right / Middle click (hold one and move with another finger to drag).
 
 **Keyboard**
 - The phone keyboard types straight into the PC. Autocorrect is off and Backspace always reaches the PC.

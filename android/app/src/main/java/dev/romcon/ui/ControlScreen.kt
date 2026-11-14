@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,12 +33,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Dialpad
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -70,7 +65,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
@@ -79,7 +73,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.romcon.AppViewModel
 import dev.romcon.ConnState
+import dev.romcon.data.BarButton
 import dev.romcon.input.Latch
 import dev.romcon.input.ModKey
 import dev.romcon.input.Vk
@@ -101,6 +95,7 @@ fun ControlScreen(vm: AppViewModel) {
     val view = LocalView.current
     val keyboard = remember { KeyboardController() }
     var keysOpen by rememberSaveable { mutableStateOf(false) }
+    var keysTab by rememberSaveable { mutableIntStateOf(0) }
     var textDialog by rememberSaveable { mutableStateOf(false) }
     val imeVisible = WindowInsets.isImeVisible
     val hapticsOn by rememberUpdatedState(settings.haptics)
@@ -162,26 +157,50 @@ fun ControlScreen(vm: AppViewModel) {
             ConnectionOverlay(conn, vm, Modifier.align(Alignment.Center))
         }
 
-        MouseButtons(actions, haptic, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
-
         AnimatedVisibility(visible = keysOpen, enter = expandVertically(), exit = shrinkVertically()) {
-            KeysPanel(vm, haptic, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
+            KeysPanel(vm, haptic, keysTab, { keysTab = it }, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
         }
 
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            BarToggle(
-                icon = if (imeVisible) Icons.Filled.KeyboardHide else Icons.Filled.Keyboard,
-                label = "Keyboard",
-                selected = imeVisible,
-            ) { if (imeVisible) keyboard.hide() else keyboard.show() }
-            BarToggle(Icons.Filled.Dialpad, "Keys", keysOpen) { keysOpen = !keysOpen }
-            BarToggle(Icons.Filled.TextFields, "Send text", false) { textDialog = true }
-        }
+        // Shortcuts and Keys open the same panel on different tabs; each is lit while its side of the panel shows.
+        val onShortcuts = keysOpen && keysTab == SHORTCUTS_TAB
+        val onKeys = keysOpen && keysTab != SHORTCUTS_TAB
+        BottomBar(
+            buttons = settings.bottomBar,
+            selected = { button ->
+                when (button) {
+                    BarButton.KEYBOARD -> imeVisible
+                    BarButton.SHORTCUTS -> onShortcuts
+                    BarButton.KEYS -> onKeys
+                    else -> false
+                }
+            },
+            onPress = { button ->
+                when (button) {
+                    BarButton.KEYBOARD -> if (imeVisible) keyboard.hide() else keyboard.show()
+                    BarButton.SHORTCUTS -> if (onShortcuts) {
+                        keysOpen = false
+                    } else {
+                        keysTab = SHORTCUTS_TAB
+                        keysOpen = true
+                    }
+                    BarButton.KEYS -> if (onKeys) {
+                        keysOpen = false
+                    } else {
+                        if (keysTab == SHORTCUTS_TAB) keysTab = 0
+                        keysOpen = true
+                    }
+                    BarButton.SEND_TEXT -> textDialog = true
+                    else -> {
+                        haptic(false)
+                        vm.press(button)
+                    }
+                }
+            },
+            onMouse = { button, down ->
+                if (down) haptic(false)
+                actions.button(button, down)
+            },
+        )
 
         KeyboardCapture(keyboard, sink)
     }
@@ -277,82 +296,11 @@ private fun OverlayCard(modifier: Modifier, content: @Composable () -> Unit) {
     }
 }
 
-@Composable
-private fun MouseButtons(actions: PointerActions, haptic: (Boolean) -> Unit, modifier: Modifier) {
-    Row(modifier.fillMaxWidth().height(60.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        HoldButton("Left", Modifier.weight(2f)) { down ->
-            if (down) haptic(false)
-            actions.button(Proto.BUTTON_LEFT, down)
-        }
-        HoldButton("Middle", Modifier.weight(1f)) { down ->
-            if (down) haptic(false)
-            actions.button(Proto.BUTTON_MIDDLE, down)
-        }
-        HoldButton("Right", Modifier.weight(2f)) { down ->
-            if (down) haptic(false)
-            actions.button(Proto.BUTTON_RIGHT, down)
-        }
-    }
-}
-
-/** Mirrors the finger: pressed while touched, released when lifted. Hold it and drag on the trackpad with another finger. */
-@Composable
-private fun HoldButton(label: String, modifier: Modifier, onChange: (Boolean) -> Unit) {
-    var pressed by remember { mutableStateOf(false) }
-    val current by rememberUpdatedState(onChange)
-    Surface(
-        modifier = modifier
-            .fillMaxHeight()
-            .semantics(mergeDescendants = true) {
-                role = Role.Button
-                onClick {
-                    current(true)
-                    current(false)
-                    true
-                }
-            }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false).consume()
-                    pressed = true
-                    current(true)
-                    try {
-                        waitForRelease()
-                    } finally {
-                        pressed = false
-                        current(false)
-                    }
-                }
-            },
-        shape = RoundedCornerShape(18.dp),
-        color = if (pressed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-private suspend fun AwaitPointerEventScope.waitForRelease() {
+internal suspend fun AwaitPointerEventScope.waitForRelease() {
     while (true) {
         val event = awaitPointerEvent()
         event.changes.forEach { it.consume() }
         if (event.changes.none { it.pressed }) return
-    }
-}
-
-@Composable
-private fun BarToggle(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
-        Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(icon, contentDescription = null, tint = color)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = color)
     }
 }
 
@@ -389,11 +337,31 @@ private val shortcuts = listOf(
     Shortcut("Close app", Vk.f(4), ALT),
 )
 
+private val keysTabs = listOf("Keys", "F1–F12", "Media", "Shortcuts")
+private const val SHORTCUTS_TAB = 3
+
+/** Bottom-bar buttons that press a key or a shortcut on the PC; the rest are handled by the screen itself. */
+private fun AppViewModel.press(button: BarButton) {
+    when (button) {
+        BarButton.WINDOWS -> key(Vk.WIN)
+        BarButton.SWITCH_APP -> switchApp()
+        BarButton.TASK_VIEW -> shortcut(Vk.TAB, WIN)
+        BarButton.DESKTOP -> shortcut(Vk.letter('D'), WIN)
+        BarButton.ESC -> key(Vk.ESC)
+        BarButton.ENTER -> key(Vk.ENTER)
+        BarButton.COPY -> shortcut(Vk.letter('C'), CTRL)
+        BarButton.PASTE -> shortcut(Vk.letter('V'), CTRL)
+        BarButton.PLAY_PAUSE -> key(Vk.MEDIA_PLAY_PAUSE)
+        BarButton.VOLUME_DOWN -> key(Vk.VOLUME_DOWN)
+        BarButton.VOLUME_UP -> key(Vk.VOLUME_UP)
+        BarButton.MUTE -> key(Vk.VOLUME_MUTE)
+        else -> Unit
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun KeysPanel(vm: AppViewModel, haptic: (Boolean) -> Unit, modifier: Modifier) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
-    val tabs = listOf("Keys", "F1–F12", "Media", "Shortcuts")
+private fun KeysPanel(vm: AppViewModel, haptic: (Boolean) -> Unit, tab: Int, onTab: (Int) -> Unit, modifier: Modifier) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModKey.entries.forEach { mod ->
@@ -432,8 +400,8 @@ private fun KeysPanel(vm: AppViewModel, haptic: (Boolean) -> Unit, modifier: Mod
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            tabs.forEachIndexed { i, label ->
-                FilterChip(selected = tab == i, onClick = { tab = i }, label = { Text(label) })
+            keysTabs.forEachIndexed { i, label ->
+                FilterChip(selected = tab == i, onClick = { onTab(i) }, label = { Text(label) })
             }
         }
         // A fixed height, so switching tabs never moves the rows above under the user's finger.
