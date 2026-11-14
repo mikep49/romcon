@@ -35,6 +35,9 @@ import kotlin.coroutines.resume
 
 enum class Screen { HOME, CONTROL, SETTINGS }
 
+/** A page inside Settings; the settings list itself is shown when none is open. */
+enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, GENERAL }
+
 sealed interface ConnState {
     data object Idle : ConnState
     data class Connecting(val pc: SavedPc, val attempt: Int, val lastError: String?) : ConnState
@@ -66,6 +69,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var screen by mutableStateOf(Screen.HOME)
         private set
     private var screenBeforeSettings = Screen.HOME
+
+    var settingsPage by mutableStateOf<SettingsPage?>(null)
+        private set
 
     private val _pcs = MutableStateFlow(store.loadPcs().sortedByDescending { it.lastUsed })
     val pcs: StateFlow<List<SavedPc>> = _pcs.asStateFlow()
@@ -99,12 +105,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openSettings() {
         if (screen != Screen.SETTINGS) screenBeforeSettings = screen
+        settingsPage = null
         screen = Screen.SETTINGS
+    }
+
+    fun openSettingsPage(page: SettingsPage) {
+        settingsPage = page
     }
 
     fun back() {
         when (screen) {
-            Screen.SETTINGS -> screen = screenBeforeSettings
+            Screen.SETTINGS -> if (settingsPage != null) settingsPage = null else screen = screenBeforeSettings
             Screen.CONTROL -> disconnect()
             Screen.HOME -> Unit
         }

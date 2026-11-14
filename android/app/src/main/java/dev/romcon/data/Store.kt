@@ -19,7 +19,11 @@ data class SavedPc(
     val lastUsed: Long,
 )
 
+/** App colours: follow the phone, or force light, dark, or pure-black dark for OLED screens. */
+enum class ThemeMode { SYSTEM, LIGHT, DARK, OLED }
+
 data class AppSettings(
+    val theme: ThemeMode = ThemeMode.SYSTEM,
     val pointerSpeed: Float = 1.0f,
     val acceleration: Float = 0.6f,
     val scrollSpeed: Float = 1.0f,
@@ -94,6 +98,7 @@ class Store(context: Context) {
     fun loadSettings(): AppSettings {
         val d = AppSettings()
         return AppSettings(
+            theme = prefs.getString("theme", null)?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: d.theme,
             pointerSpeed = prefs.getFloat("pointerSpeed", d.pointerSpeed),
             acceleration = prefs.getFloat("acceleration", d.acceleration),
             scrollSpeed = prefs.getFloat("scrollSpeed", d.scrollSpeed),
@@ -108,6 +113,7 @@ class Store(context: Context) {
 
     fun saveSettings(s: AppSettings) {
         prefs.edit {
+            putString("theme", s.theme.name)
             putFloat("pointerSpeed", s.pointerSpeed)
             putFloat("acceleration", s.acceleration)
             putFloat("scrollSpeed", s.scrollSpeed)
