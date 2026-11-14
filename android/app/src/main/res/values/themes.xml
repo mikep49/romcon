@@ -4,4 +4,21 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
+
+    <!-- Fixed variants for when the user picks a theme in Settings instead of following the system. -->
+    <style name="Theme.RomCon.Light" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_light</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.RomCon.Dark" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_dark</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.RomCon.Black" parent="Theme.RomCon.Dark">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>
