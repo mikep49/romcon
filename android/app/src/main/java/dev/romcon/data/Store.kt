@@ -74,6 +74,7 @@ data class AppSettings(
     val scrollBar: Boolean = true,
     val scrollBarReversed: Boolean = false,
     val tapToClick: Boolean = true,
+    val typingPreview: Boolean = true,
     val haptics: Boolean = true,
     val keepScreenOn: Boolean = true,
 )
@@ -152,6 +153,7 @@ class Store(context: Context) {
             scrollBar = prefs.getBoolean("scrollBar", d.scrollBar),
             scrollBarReversed = prefs.getBoolean("scrollBarReversed", d.scrollBarReversed),
             tapToClick = prefs.getBoolean("tapToClick", d.tapToClick),
+            typingPreview = prefs.getBoolean("typingPreview", d.typingPreview),
             haptics = prefs.getBoolean("haptics", d.haptics),
             keepScreenOn = prefs.getBoolean("keepScreenOn", d.keepScreenOn),
         )
@@ -170,6 +172,7 @@ class Store(context: Context) {
             putBoolean("scrollBar", s.scrollBar)
             putBoolean("scrollBarReversed", s.scrollBarReversed)
             putBoolean("tapToClick", s.tapToClick)
+            putBoolean("typingPreview", s.typingPreview)
             putBoolean("haptics", s.haptics)
             putBoolean("keepScreenOn", s.keepScreenOn)
         }

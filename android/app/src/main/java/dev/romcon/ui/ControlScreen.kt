@@ -157,6 +157,10 @@ fun ControlScreen(vm: AppViewModel) {
             ConnectionOverlay(conn, vm, Modifier.align(Alignment.Center))
         }
 
+        AnimatedVisibility(visible = imeVisible && settings.typingPreview, enter = expandVertically(), exit = shrinkVertically()) {
+            TypingPreview(vm.typed, vm::clearTyped, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
+        }
+
         AnimatedVisibility(visible = keysOpen, enter = expandVertically(), exit = shrinkVertically()) {
             KeysPanel(vm, haptic, keysTab, { keysTab = it }, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
         }
