@@ -27,6 +27,7 @@ object Proto {
     const val KEY = 0x21
     const val CHAR_WITH_MODS = 0x22
     const val COMMAND = 0x30
+    const val MEDIA_COMMAND = 0x40
 
     // PC -> phone
     const val WELCOME = 0x81
@@ -35,6 +36,8 @@ object Proto {
     const val STATUS = 0x84
     const val UDP_OFFER = 0x85
     const val UDP_PONG = 0x86
+    const val MEDIA = 0x87
+    const val MEDIA_ART = 0x88
 
     // A datagram is [u32 channel id][u64 counter][AES-256-GCM ciphertext][16-byte tag].
     const val UDP_KEY_SIZE = 32
@@ -43,6 +46,13 @@ object Proto {
 
     const val AUTH_TOKEN = 0
     const val AUTH_PIN = 1
+
+    // What a connection is for: controlling the PC, or only showing its media controls on the phone.
+    const val ROLE_CONTROL = 0
+    const val ROLE_MEDIA = 1
+
+    // WELCOME feature bits.
+    const val FEATURE_MEDIA = 1
 
     const val REJECT_VERSION = 1
     const val REJECT_NOT_PAIRED = 2
@@ -60,6 +70,28 @@ object Proto {
     const val MOD_WIN = 8
 
     const val CMD_LOCK = 1
+
+    const val MEDIA_NONE = 0
+    const val MEDIA_PLAYING = 1
+    const val MEDIA_PAUSED = 2
+
+    const val CAN_PLAY = 1
+    const val CAN_PAUSE = 2
+    const val CAN_NEXT = 4
+    const val CAN_PREVIOUS = 8
+    const val CAN_SEEK = 16
+    const val CAN_VOLUME = 32
+
+    const val MEDIA_PLAY = 1
+    const val MEDIA_PAUSE = 2
+    const val MEDIA_NEXT = 3
+    const val MEDIA_PREVIOUS = 4
+    const val MEDIA_SEEK_TO = 5
+    const val MEDIA_SET_VOLUME = 6
+    const val MEDIA_ADJUST_VOLUME = 7
+
+    /** The most artwork the phone accepts, however many MEDIA_ART frames it arrives in. */
+    const val MAX_ART_BYTES = 256 * 1024
 
     const val BUTTON_LEFT = 0
     const val BUTTON_RIGHT = 1
@@ -85,6 +117,11 @@ class FrameBuilder(type: Int) {
         out.write(v and 0xFF)
     }
 
+    fun u32(v: Int) = apply {
+        u16(v ushr 16)
+        u16(v)
+    }
+
     fun u64(v: Long) = apply {
         for (shift in 56 downTo 0 step 8) out.write((v ushr shift).toInt() and 0xFF)
     }
@@ -108,6 +145,9 @@ class FrameBuilder(type: Int) {
 class Frame(val type: Int, private val data: ByteArray) {
     private var pos = 0
 
+    /** True while there is payload left to read. Newer senders append fields that older ones leave out. */
+    val hasMore: Boolean get() = pos < data.size
+
     fun u8(): Int {
         if (pos >= data.size) throw IOException("frame too short")
         return data[pos++].toInt() and 0xFF
@@ -122,12 +162,56 @@ class Frame(val type: Int, private val data: ByteArray) {
         return data.copyOfRange(pos, pos + n).also { pos += n }
     }
 
+    /** Everything not read yet. */
+    fun rest(): ByteArray = bytes(data.size - pos)
+
     fun str(): String {
         val n = u16()
         if (pos + n > data.size) throw IOException("string runs past the frame")
         val s = String(data, pos, n, Charsets.UTF_8)
         pos += n
         return s
+    }
+}
+
+/**
+ * What the PC says is playing, from a MEDIA frame. [positionMs] was true when the frame was sent, and moves on at
+ * [ratePercent] while [playing]. A [durationMs] of 0 means the PC doesn't know the length (a live stream, say).
+ */
+data class MediaState(
+    val state: Int = Proto.MEDIA_NONE,
+    val can: Int = 0,
+    val volume: Int = 0,
+    val muted: Boolean = false,
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    val ratePercent: Int = 100,
+    /** 0 for no artwork. Otherwise the picture arrives in MEDIA_ART frames carrying the same id. */
+    val artId: Int = 0,
+    val title: String = "",
+    val artist: String = "",
+) {
+    /** Something is playing, or was a moment ago and can be resumed. */
+    val showing: Boolean get() = state != Proto.MEDIA_NONE
+    val playing: Boolean get() = state == Proto.MEDIA_PLAYING
+
+    fun can(what: Int): Boolean = can and what != 0
+
+    companion object {
+        val NONE = MediaState()
+
+        fun parse(f: Frame) = MediaState(
+            state = f.u8(),
+            can = f.u8(),
+            volume = f.u8().coerceAtMost(100),
+            muted = f.u8() != 0,
+            positionMs = f.u32().toLong() and 0xFFFFFFFFL,
+            durationMs = f.u32().toLong() and 0xFFFFFFFFL,
+            ratePercent = f.u16(),
+            artId = f.u32(),
+            title = f.str(),
+            artist = f.str(),
+        )
     }
 }
 

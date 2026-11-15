@@ -35,13 +35,15 @@ The phone's first frame must be **HELLO**. The PC waits up to 120 s for it.
 
 | Type | Name | Payload |
 | --- | --- | --- |
-| `0x01` | HELLO | `u8 version (1)`, `str deviceId`, `str deviceName`, `u8 mode` (0 = token, 1 = PIN), `str secret` |
-| `0x81` | WELCOME | `str pcName`, `str token`. The token is non-empty only after PIN pairing; the phone stores it. |
+| `0x01` | HELLO | `u8 version (1)`, `str deviceId`, `str deviceName`, `u8 mode` (0 = token, 1 = PIN), `str secret`, then optionally `u8 role` (0 = control, 1 = media link) |
+| `0x81` | WELCOME | `str pcName`, `str token`, then optionally `u8 features` (bit 0: the PC offers media links). The token is non-empty only after PIN pairing; the phone stores it. |
 | `0x82` | REJECTED | `u8 code`, `str message`, then the PC closes the connection |
 
 Rejection codes: 1 version mismatch, 2 not paired (unknown device or token), 3 wrong PIN, 4 pairing not open, 5 too many wrong PINs (pairing closed).
 
 A PIN is accepted only while pairing is open on the PC (3 minutes, single use, closed after 5 failures). The PC stores the SHA-256 of each issued token, never the token.
+
+`role` and `features` were added after the first release. A receiver reads them only if the frame has bytes left, so an app that predates them simply sends a shorter frame, and one that doesn't know them ignores the extra byte. A missing role means control. A role of media is honoured only with a token; a phone pairing with a PIN gets a control connection.
 
 ### After WELCOME
 
@@ -59,6 +61,7 @@ Phone to PC:
 | `0x21` | KEY | `u16 virtualKey` (Windows VK code), `u8 action` (0 up, 1 down, 2 tap), `u8 mods` (tap only) |
 | `0x22` | CHAR_WITH_MODS | `u8 mods`, `u16 utf16char`: the PC finds the key for the character on its current layout and taps it with the modifiers |
 | `0x30` | COMMAND | `u8 command` (1 = lock the workstation) |
+| `0x40` | MEDIA_COMMAND | `u8 command`, `u32 value`: see *Media link* |
 
 `mods` bits: 1 Ctrl, 2 Alt, 4 Shift, 8 Win.
 
@@ -70,10 +73,58 @@ PC to phone:
 | `0x84` | STATUS | `u8 paused`. Sent after WELCOME and whenever remote control is paused or resumed on the PC. |
 | `0x85` | UDP_OFFER | `u16 udpPort`, `u32 channelId`, 32 bytes of key |
 | `0x86` | UDP_PONG | none. The PC received a PING by UDP. |
+| `0x87` | MEDIA | What's playing: see *Media link* |
+| `0x88` | MEDIA_ART | A piece of the artwork: see *Media link* |
 
 Receivers ignore frame types they don't know, so either side can add messages without breaking the other.
 
 The PC tracks buttons and keys each phone holds down (MOUSE_BUTTON, KEY down/up) and releases them when the connection ends.
+
+## Media link
+
+A second kind of connection, which the phone keeps open in the background to show the PC's media controls on its lock screen. It's the same TLS connection and sign-in, with `role` 1 in HELLO. The phone only opens one to a PC whose WELCOME had the media feature bit.
+
+On a media link the PC accepts PING and MEDIA_COMMAND and ignores everything else, so the link can't move the pointer or type. It doesn't count as a connected phone on the PC, and the PC doesn't drop it for being silent: a sleeping phone stops pinging, and TCP keep-alive (every 5 minutes) finds dead links instead. A phone has one media link per PC; a new one replaces the old.
+
+The PC sends MEDIA right after WELCOME and again whenever something in it changes:
+
+```
+u8  state        0 nothing to show, 1 playing, 2 paused
+u8  can          bits: 1 play, 2 pause, 4 next, 8 previous, 16 seek, 32 volume
+u8  volume       the PC's master volume, 0..100
+u8  muted
+u32 positionMs   where playback is as the frame is sent
+u32 durationMs   0 if unknown (a live stream)
+u16 ratePercent  playback speed; 100 is normal
+u32 artId        0 for no artwork
+str title
+str artist
+```
+
+The phone moves the position on by itself from `positionMs` at `ratePercent`, so the PC sends a new MEDIA for a position only when it jumps. A paused player is reported for 10 minutes after it was last playing, then as state 0. While remote control is paused on the PC, and as the PC goes to sleep, the state is 0.
+
+A non-zero `artId` names a JPEG (at most 480 pixels a side) that follows in MEDIA_ART frames, unless this connection has already been sent that id:
+
+```
+u32 artId
+u16 index        0, 1, 2, ...
+u16 count        how many frames the picture takes
+...              up to 8000 bytes of the JPEG
+```
+
+MEDIA_COMMAND, phone to PC, is `u8 command`, `u32 value`:
+
+| Command | | Value |
+| --- | --- | --- |
+| 1 | Play | unused |
+| 2 | Pause | unused |
+| 3 | Next | unused |
+| 4 | Previous | unused |
+| 5 | Seek | position in milliseconds |
+| 6 | Set volume | 0..100 |
+| 7 | Adjust volume | change in percent, a two's-complement `i32`. Turning a muted PC up unmutes it. |
+
+Playback commands go to the player the last MEDIA described. The PC doesn't answer a command; the result arrives as the next MEDIA.
 
 ## Pointer movement over UDP (UDP 50505)
 

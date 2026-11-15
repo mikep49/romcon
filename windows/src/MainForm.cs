@@ -596,7 +596,10 @@ namespace RomCon
             {
                 var d = devices[i];
                 var live = sessions.FirstOrDefault(s => s.DeviceId == d.Id);
-                phoneRows[i].Set(d.Id, d.Name, live != null ? "Connected from " + live.Address : "Last seen " + Ago(d.LastSeenUtc), live != null);
+                string status = live != null ? "Connected from " + live.Address
+                    : server.HasMediaLink(d.Id) ? "Ready to show media controls"
+                    : "Last seen " + Ago(d.LastSeenUtc);
+                phoneRows[i].Set(d.Id, d.Name, status, live != null);
             }
             noPhones.Visible = devices.Count == 0;
             phoneList.ResumeLayout();

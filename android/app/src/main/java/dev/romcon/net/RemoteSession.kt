@@ -2,6 +2,7 @@ package dev.romcon.net
 
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.EOFException
 import java.io.IOException
@@ -28,7 +29,10 @@ enum class FailKind { UNREACHABLE, IDENTITY_CHANGED, NOT_PAIRED, WRONG_PIN, PAIR
 
 class RemoteException(val kind: FailKind, message: String, cause: Throwable? = null) : Exception(message, cause)
 
-data class Welcome(val serverName: String, val token: String)
+data class Welcome(val serverName: String, val token: String, val features: Int = 0) {
+    /** The PC can say what's playing on it (see [Proto.ROLE_MEDIA]). */
+    val media: Boolean get() = features and Proto.FEATURE_MEDIA != 0
+}
 
 /**
  * One TLS connection to a RomCon PC. Blocking calls: run [open] and [hello] off the main thread.
@@ -37,6 +41,10 @@ data class Welcome(val serverName: String, val token: String)
  *
  * With [preferUdp] on, pointer movement and scrolling leave as datagrams through a [PointerChannel] once
  * the PC has shown that it receives them. Everything else, and all of it until then, uses the TLS connection.
+ *
+ * Signed in with [Proto.ROLE_MEDIA], the connection is a media link instead: the PC reports what's playing
+ * ([Listener.onMedia]) and takes [mediaCommand], and nothing else. Start that one `relaxed`, since it lives
+ * in the background, where frequent pings would keep the phone awake.
  */
 class RemoteSession private constructor(private val socket: SSLSocket, private val address: InetAddress, val fingerprint: String) : Closeable {
 
@@ -45,6 +53,12 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
 
         /** Pointer movement switched to UDP ([active]) or back to the TCP connection. */
         fun onUdp(active: Boolean) {}
+
+        /** On a media link: what's playing on the PC changed. */
+        fun onMedia(media: MediaState) {}
+
+        /** On a media link: the JPEG artwork for the [MediaState] with this [artId] arrived. */
+        fun onArt(artId: Int, jpeg: ByteArray) {}
 
         /** The connection died on its own (not through [close]). */
         fun onClosed(error: RemoteException)
@@ -63,6 +77,18 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
     private val queue = LinkedBlockingQueue<Out>()
     private val closed = AtomicBoolean(false)
     private var listener: Listener? = null
+
+    private var pingIntervalMs = PING_INTERVAL_MS
+    private var readTimeoutMs = READ_TIMEOUT_MS
+
+    /** When the PC was last heard from, in [System.nanoTime]. */
+    @Volatile var lastHeard = System.nanoTime()
+        private set
+
+    // Artwork being put together from MEDIA_ART frames. Only the reader thread uses these.
+    private var artId = 0
+    private var artNext = -1
+    private val art = ByteArrayOutputStream()
 
     @Volatile private var pointer: PointerChannel? = null
     private val udpRequested = AtomicBoolean(false)
@@ -97,6 +123,8 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
         private const val READ_TIMEOUT_MS = 12000
         private const val PING_INTERVAL_MS = 2500L
         private const val PING_INTERVAL_NS = PING_INTERVAL_MS * 1_000_000
+        private const val RELAXED_PING_INTERVAL_MS = 20_000L
+        private const val RELAXED_READ_TIMEOUT_MS = 50_000
 
         /** With no confirmed datagram for this long, pointer movement goes back to TCP. */
         private const val UDP_DEAD_NS = 3 * PING_INTERVAL_NS
@@ -157,15 +185,18 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
         }
     }
 
-    /** Signs in with a pairing token ([Proto.AUTH_TOKEN]) or a PIN ([Proto.AUTH_PIN]). Closes the session on failure. */
-    fun hello(deviceId: String, deviceName: String, mode: Int, secret: String): Welcome {
+    /**
+     * Signs in with a pairing token ([Proto.AUTH_TOKEN]) or a PIN ([Proto.AUTH_PIN]). Closes the session on failure.
+     * [role] says what the connection is for; a PC from before media links ignores it and takes it for control.
+     */
+    fun hello(deviceId: String, deviceName: String, mode: Int, secret: String, role: Int = Proto.ROLE_CONTROL): Welcome {
         try {
-            val frame = FrameBuilder(Proto.HELLO).u8(Proto.VERSION).str(deviceId).str(deviceName).u8(mode).str(secret).build()
+            val frame = FrameBuilder(Proto.HELLO).u8(Proto.VERSION).str(deviceId).str(deviceName).u8(mode).str(secret).u8(role).build()
             socket.outputStream.write(frame)
             socket.outputStream.flush()
             val reply = readFrame(input) ?: throw RemoteException(FailKind.CLOSED, "The PC closed the connection.")
             return when (reply.type) {
-                Proto.WELCOME -> Welcome(reply.str(), reply.str())
+                Proto.WELCOME -> Welcome(reply.str(), reply.str(), if (reply.hasMore) reply.u8() else 0)
                 Proto.REJECTED -> {
                     val code = reply.u8()
                     val message = reply.str()
@@ -190,9 +221,17 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
         }
     }
 
-    /** Starts the reader and writer threads. Call once, after a successful [hello]. */
-    fun start(listener: Listener) {
+    /**
+     * Starts the reader and writer threads. Call once, after a successful [hello]. A [relaxed] session pings
+     * rarely and waits longer for an answer; use [ping] and [lastHeard] to check on it sooner.
+     */
+    fun start(listener: Listener, relaxed: Boolean = false) {
         this.listener = listener
+        if (relaxed) {
+            pingIntervalMs = RELAXED_PING_INTERVAL_MS
+            readTimeoutMs = RELAXED_READ_TIMEOUT_MS
+        }
+        lastHeard = System.nanoTime()
         Thread(::writerLoop, "romcon-writer").apply { isDaemon = true }.start()
         Thread(::readerLoop, "romcon-reader").apply { isDaemon = true }.start()
     }
@@ -212,6 +251,12 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
     fun charWithMods(c: Char, mods: Int) = raw(FrameBuilder(Proto.CHAR_WITH_MODS).u8(mods).u16(c.code))
 
     fun command(command: Int) = raw(FrameBuilder(Proto.COMMAND).u8(command))
+
+    /** One of [Proto.MEDIA_PLAY] and its neighbours. The PC only carries these out on a media link. */
+    fun mediaCommand(command: Int, value: Int = 0) = raw(FrameBuilder(Proto.MEDIA_COMMAND).u8(command).u32(value))
+
+    /** Asks the PC to answer now; [lastHeard] moves on when it does. */
+    fun ping() = raw(FrameBuilder(Proto.PING))
 
     fun text(text: String) {
         var start = 0
@@ -264,14 +309,14 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
         try {
             while (!closed.get()) {
                 batch.clear()
-                val first = queue.poll(PING_INTERVAL_MS, TimeUnit.MILLISECONDS)
+                val first = queue.poll(pingIntervalMs, TimeUnit.MILLISECONDS)
                 if (first != null) {
                     batch.add(first)
                     queue.drainTo(batch, 255)
                 }
                 writeBatch(out, batch)
                 val now = System.nanoTime()
-                if (now - lastPing >= PING_INTERVAL_NS) {
+                if (now - lastPing >= pingIntervalMs * 1_000_000) {
                     write(out, PING)
                     lastPing = now
                 }
@@ -419,9 +464,10 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
 
     private fun readerLoop() {
         try {
-            socket.soTimeout = READ_TIMEOUT_MS
+            socket.soTimeout = readTimeoutMs
             while (!closed.get()) {
                 val frame = readFrame(input) ?: throw RemoteException(FailKind.CLOSED, "The PC closed the connection.")
+                lastHeard = System.nanoTime()
                 when (frame.type) {
                     Proto.STATUS -> listener?.onStatus(frame.u8() != 0)
                     Proto.PONG -> Unit
@@ -430,12 +476,40 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
                         lastUdpPong = System.nanoTime()
                         refreshUdp()
                     }
+                    Proto.MEDIA -> listener?.onMedia(MediaState.parse(frame))
+                    Proto.MEDIA_ART -> collectArt(frame)
                 }
             }
         } catch (e: SocketTimeoutException) {
             fail(RemoteException(FailKind.CLOSED, "The PC stopped responding.", e))
         } catch (e: Exception) {
             fail(e)
+        }
+    }
+
+    /** Artwork arrives as numbered pieces, in order. A piece out of turn belongs to a picture that was superseded. */
+    private fun collectArt(frame: Frame) {
+        val id = frame.u32()
+        val index = frame.u16()
+        val count = frame.u16()
+        if (index == 0) {
+            artId = id
+            artNext = 0
+            art.reset()
+        }
+        if (id != artId || index != artNext) {
+            artNext = -1
+            return
+        }
+        art.write(frame.rest())
+        artNext++
+        if (art.size() > Proto.MAX_ART_BYTES) {
+            artNext = -1
+            art.reset()
+        } else if (artNext == count) {
+            listener?.onArt(id, art.toByteArray())
+            artNext = -1
+            art.reset()
         }
     }
 

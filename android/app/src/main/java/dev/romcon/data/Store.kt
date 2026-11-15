@@ -84,6 +84,10 @@ data class AppSettings(
     val haptics: Boolean = true,
     val keepScreenOn: Boolean = true,
     val transport: Transport = Transport.TCP,
+    /** Show media controls on the lock screen while a paired PC plays something. */
+    val lockScreenMedia: Boolean = true,
+    /** While the PC plays, the phone's volume buttons change the PC's volume. */
+    val volumeKeys: Boolean = true,
 )
 
 /** Everything lives in app-private storage, and backups are disabled in the manifest so tokens never leave the phone. */
@@ -164,6 +168,8 @@ class Store(context: Context) {
             haptics = prefs.getBoolean("haptics", d.haptics),
             keepScreenOn = prefs.getBoolean("keepScreenOn", d.keepScreenOn),
             transport = prefs.getString("transport", null)?.let { name -> Transport.entries.firstOrNull { it.name == name } } ?: d.transport,
+            lockScreenMedia = prefs.getBoolean("lockScreenMedia", d.lockScreenMedia),
+            volumeKeys = prefs.getBoolean("volumeKeys", d.volumeKeys),
         )
     }
 
@@ -184,6 +190,22 @@ class Store(context: Context) {
             putBoolean("haptics", s.haptics)
             putBoolean("keepScreenOn", s.keepScreenOn)
             putString("transport", s.transport.name)
+            putBoolean("lockScreenMedia", s.lockScreenMedia)
+            putBoolean("volumeKeys", s.volumeKeys)
         }
+    }
+
+    /**
+     * Fingerprints of paired PCs whose RomCon is too old to say what's playing. The background media link
+     * leaves those alone, because an old PC would take it for a phone connecting to control it.
+     */
+    fun pcsWithoutMedia(): Set<String> = prefs.getStringSet("pcsWithoutMedia", null)?.toSet() ?: emptySet()
+
+    /** Records what a PC said about itself when the phone signed in. Returns true if that is news. */
+    fun setMediaSupport(fingerprint: String, supported: Boolean): Boolean {
+        val without = pcsWithoutMedia()
+        if (supported != (fingerprint in without)) return false
+        prefs.edit { putStringSet("pcsWithoutMedia", if (supported) without - fingerprint else without + fingerprint) }
+        return true
     }
 }

@@ -4,7 +4,7 @@ Use your Android phone as a wireless trackpad and keyboard for a Windows PC. It 
 
 RomCon is two small apps:
 
-- **The Windows app** sits in the tray and turns what the phone sends into mouse and keyboard input. It's a single exe of about 180 KB with no installer. It runs on Windows 10 and 11 as they come.
+- **The Windows app** sits in the tray and turns what the phone sends into mouse and keyboard input. It's a single exe of about 200 KB with no installer. It runs on Windows 10 and 11 as they come.
 - **The Android app** is the remote: a trackpad, your phone keyboard, and buttons for shortcuts and media keys. It needs Android 8.0 or newer.
 
 <p align="center">
@@ -24,6 +24,7 @@ RomCon is two small apps:
 - **Trackpad.** Move, tap to click, two-finger scroll, and double-tap and drag, like a laptop touchpad.
 - **Keyboard.** The phone keyboard types straight into the PC, in any language, emoji included. There are Ctrl, Alt, Shift and Win keys, arrows, F-keys and common shortcuts.
 - **Media and system.** Play/pause, volume, switch app, show desktop and lock the PC.
+- **Media controls on the lock screen.** While the PC is playing something, the phone shows what it is, with play/pause, skip and the PC's volume, without unlocking it or opening the app.
 - **A bar you choose.** Put up to five buttons you use most under the trackpad.
 - **Finds your PC.** A PC on the same Wi-Fi shows up by itself. Over Tailscale, add it by address.
 - **Private.** A phone has to be paired with a PIN shown on the PC, and everything it sends is encrypted.

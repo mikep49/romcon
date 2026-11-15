@@ -35,13 +35,23 @@ Everything the [README](../README.md) leaves out.
 - *Send text* types a whole block at once (links, passwords, pasted text).
 - A hardware keyboard paired to the phone works too.
 
+### Media controls on the lock screen
+
+- While a paired PC is playing something (a YouTube video, Spotify, any player Windows knows about), the phone shows media controls on its lock screen and with its notifications: the title and artwork, play/pause, a seek bar, skip where the player offers it, and the PC's volume.
+- They appear when playback starts and go away when it stops. A paused player keeps them for 10 minutes, so you can resume.
+- While the PC is playing, the phone's volume buttons change the PC's volume. This can be turned off.
+- You don't need to open the app. After pairing, the phone stays connected to the PC in the background, also after a restart. That connection can't control the pointer or keyboard, and it sends nothing while nothing changes, so the phone can sleep.
+- Android requires a notification for an app that stays connected like this. It's silent and never on the lock screen. To hide it, long-press it and turn it off.
+- The setting is under Settings, Media controls. Both apps need a version that has this; an older RomCon on the PC is left alone until you update it and connect to it once from the app.
+- With several paired PCs, the phone stays with one at a time: the most recently used one it can reach.
+
 ### Connection
 
 - PCs on the same Wi-Fi show up automatically.
 - Over Tailscale (or any routed network), add the PC by its 100.x address or MagicDNS name.
 - If the phone is on the PC's Wi-Fi it uses the faster LAN path, and it follows the PC when the router gives it a new address.
 - Pointer movement and scrolling can go over UDP instead of TCP (Settings, Connection), which keeps the pointer smooth on weak Wi-Fi. Clicks, keys and text always use TCP. If UDP can't get through, the app carries on with TCP.
-- Reconnects automatically. When the app goes to the background it disconnects, and the PC releases any held keys or buttons.
+- Reconnects automatically. When the app goes to the background it stops controlling the PC, and the PC releases any held keys or buttons. Only the connection for the lock screen media controls stays.
 - *Lock PC* button, *Pause remote control* on the PC, and a notification when a phone connects.
 
 ### Themes
@@ -52,7 +62,7 @@ Both apps offer System default, Light, Dark and OLED black. On the PC, the theme
 
 - **Pair another phone**: click **Pair a new phone** in the PC window or the tray menu. Pairing stays open for 3 minutes.
 - **Revoke a phone**: click **Remove** next to it under *Paired phones*.
-- **Stop all control for a while**: click **Pause remote control** in the PC window.
+- **Stop all control for a while**: click **Pause remote control** in the PC window. Phones also drop their media controls until you resume.
 
 ## Tailscale
 
@@ -92,7 +102,7 @@ The wire format is in [protocol.md](protocol.md).
 
 | Flag | Effect |
 | --- | --- |
-| `--dry-run` | Log input instead of sending it to Windows. Also logs the pairing PIN. |
+| `--dry-run` | Log input and media commands instead of carrying them out. Also logs the pairing PIN. What's playing is still read, so the phone's media controls can be tried. |
 | `--data-dir <dir>` | Use another settings folder instead of `%APPDATA%\RomCon`. |
 | `--port <n>` | Listen on another port, TCP and UDP (the permanent setting is `port=` in `settings.ini`). |
 | `--minimized` | Start in the tray (used by *Start with Windows*). |

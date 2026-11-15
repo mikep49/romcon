@@ -26,6 +26,7 @@ namespace RomCon
         public const byte Key = 0x21;
         public const byte CharWithMods = 0x22;
         public const byte Command = 0x30;
+        public const byte MediaCommand = 0x40;
 
         // PC -> phone
         public const byte Welcome = 0x81;
@@ -34,6 +35,8 @@ namespace RomCon
         public const byte Status = 0x84;
         public const byte UdpOffer = 0x85;
         public const byte UdpPong = 0x86;
+        public const byte Media = 0x87;
+        public const byte MediaArt = 0x88;
 
         // A datagram is [u32 channel id][u64 counter][AES-256-GCM ciphertext][16-byte tag].
         public const int UdpKeySize = 32;
@@ -42,6 +45,13 @@ namespace RomCon
 
         public const byte AuthToken = 0;
         public const byte AuthPin = 1;
+
+        // What a connection is for: controlling the PC, or only showing its media controls on the phone.
+        public const byte RoleControl = 0;
+        public const byte RoleMedia = 1;
+
+        // WELCOME feature bits.
+        public const byte FeatureMedia = 1;
 
         public const byte RejectVersion = 1;
         public const byte RejectNotPaired = 2;
@@ -59,6 +69,29 @@ namespace RomCon
         public const int ModWin = 8;
 
         public const byte CmdLock = 1;
+
+        public const byte MediaNone = 0;
+        public const byte MediaPlaying = 1;
+        public const byte MediaPaused = 2;
+
+        public const int CanPlay = 1;
+        public const int CanPause = 2;
+        public const int CanNext = 4;
+        public const int CanPrevious = 8;
+        public const int CanSeek = 16;
+        public const int CanVolume = 32;
+
+        public const byte MediaPlay = 1;
+        public const byte MediaPause = 2;
+        public const byte MediaNext = 3;
+        public const byte MediaPrevious = 4;
+        public const byte MediaSeekTo = 5;
+        public const byte MediaSetVolume = 6;
+        public const byte MediaAdjustVolume = 7;
+
+        // Artwork crosses in MEDIA_ART frames of at most this much picture each.
+        public const int ArtChunk = 8000;
+        public const int MaxArtBytes = 256 * 1024;
 
         public const int ButtonLeft = 0;
         public const int ButtonRight = 1;
@@ -79,6 +112,9 @@ namespace RomCon
             Type = type;
             this.data = data;
         }
+
+        /// <summary>True while there is payload left to read. Newer senders append fields that older ones leave out.</summary>
+        public bool HasMore => pos < data.Length;
 
         public byte U8()
         {
@@ -172,6 +208,12 @@ namespace RomCon
         public FrameBuilder Bytes(byte[] b)
         {
             ms.Write(b, 0, b.Length);
+            return this;
+        }
+
+        public FrameBuilder Bytes(byte[] b, int offset, int count)
+        {
+            ms.Write(b, offset, count);
             return this;
         }
 
