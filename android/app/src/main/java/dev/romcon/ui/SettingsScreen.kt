@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,9 +37,12 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -72,6 +76,7 @@ import dev.romcon.data.ThemeMode
 import dev.romcon.data.Transport
 import dev.romcon.media.LinkStatus
 import dev.romcon.media.MediaLink
+import dev.romcon.update.UpdateStage
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -135,9 +140,6 @@ private val ThemeMode.label: String
 
 @Composable
 private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
-    val context = LocalContext.current
-    val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
-
     PageLink(Icons.Filled.Palette, "Appearance", "Theme: ${s.theme.label}") { vm.openSettingsPage(SettingsPage.APPEARANCE) }
     PageLink(Icons.Filled.Mouse, "Mouse", "Pointer speed, scrolling, tap to click") { vm.openSettingsPage(SettingsPage.MOUSE) }
     PageLink(Icons.Filled.Keyboard, "Keyboard", "Modifier keys and typing") { vm.openSettingsPage(SettingsPage.KEYBOARD) }
@@ -150,8 +152,49 @@ private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
     PageLink(Icons.Filled.SwapVert, "Connection", "Pointer movement over ${s.transport.name}") { vm.openSettingsPage(SettingsPage.CONNECTION) }
     PageLink(Icons.Filled.Tune, "General", "Vibration, keep screen on, lock button") { vm.openSettingsPage(SettingsPage.GENERAL) }
 
+    Section("Updates")
+    UpdateSettings(vm)
+
     Section("About")
-    Help("RomCon $version\nThe PC sees this phone as \"${vm.deviceName}\".")
+    Help("RomCon ${vm.appVersion}\nThe PC sees this phone as \"${vm.deviceName}\".")
+}
+
+@Composable
+private fun UpdateSettings(vm: AppViewModel) {
+    val u by vm.update.collectAsStateWithLifecycle()
+    val current = vm.appVersion
+    val latest = u.latest?.version
+    if (u.stage == UpdateStage.FAILED) {
+        Text(
+            u.error.orEmpty() + if (u.hasUpdate) " Version $latest is available." else "",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+    } else {
+        Help(
+            when (u.stage) {
+                UpdateStage.CHECKING -> "Checking for updates…"
+                UpdateStage.UP_TO_DATE -> "You have the latest version, $current."
+                UpdateStage.AVAILABLE -> "Version $latest is available. You have $current."
+                UpdateStage.DOWNLOADING -> "Downloading version $latest…"
+                else -> "Version $current."
+            },
+        )
+    }
+    if (u.stage == UpdateStage.DOWNLOADING) {
+        val progress = u.progress
+        val bar = Modifier.fillMaxWidth().padding(top = 8.dp)
+        if (progress != null) LinearProgressIndicator(progress = { progress }, modifier = bar) else LinearProgressIndicator(bar)
+    }
+    FlowRow(
+        Modifier.padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (u.hasUpdate) {
+            Button(onClick = vm::installUpdate, enabled = !u.busy) { Text("Update to $latest") }
+        }
+        OutlinedButton(onClick = vm::checkForUpdates, enabled = !u.busy) { Text("Check for updates") }
+    }
 }
 
 @Composable

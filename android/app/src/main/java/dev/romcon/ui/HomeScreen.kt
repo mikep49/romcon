@@ -69,6 +69,8 @@ import dev.romcon.PairingUi
 import dev.romcon.data.SavedPc
 import dev.romcon.net.Proto
 import dev.romcon.net.verifyCode
+import dev.romcon.update.UpdateStage
+import dev.romcon.update.UpdateStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +79,7 @@ fun HomeScreen(vm: AppViewModel) {
     val found by vm.found.collectAsStateWithLifecycle()
     val scanning by vm.scanning.collectAsStateWithLifecycle()
     val pairing by vm.pairing.collectAsStateWithLifecycle()
+    val update by vm.update.collectAsStateWithLifecycle()
     var addDialog by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<SavedPc?>(null) }
     var forgetting by remember { mutableStateOf<SavedPc?>(null) }
@@ -113,6 +116,9 @@ fun HomeScreen(vm: AppViewModel) {
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (update.hasUpdate && !vm.updateBannerDismissed) {
+                item(key = "update") { UpdateBanner(update, onUpdate = vm::installUpdate, onLater = vm::dismissUpdateBanner) }
+            }
             if (pcs.isNotEmpty()) {
                 item { SectionTitle("Your PCs") }
                 items(pcs, key = { it.id }) { pc ->
@@ -187,6 +193,38 @@ fun HomeScreen(vm: AppViewModel) {
         )
     }
     pairing?.let { PairingDialog(it, onSubmit = vm::submitPin, onRetry = vm::retryPairing, onCancel = vm::cancelPairing) }
+}
+
+/** Offers the newer version the check at startup found. */
+@Composable
+private fun UpdateBanner(update: UpdateStatus, onUpdate: () -> Unit, onLater: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 8.dp)) {
+            Text(
+                "RomCon ${update.latest?.version} is available",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            when (update.stage) {
+                UpdateStage.DOWNLOADING -> {
+                    val progress = update.progress
+                    val bar = Modifier.fillMaxWidth().padding(top = 12.dp, end = 8.dp, bottom = 8.dp)
+                    if (progress != null) LinearProgressIndicator(progress = { progress }, modifier = bar) else LinearProgressIndicator(bar)
+                }
+                UpdateStage.FAILED -> Text(
+                    update.error.orEmpty(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp, end = 8.dp),
+                )
+                else -> Unit
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onLater) { Text("Not now") }
+                TextButton(onClick = onUpdate, enabled = !update.busy) { Text("Update") }
+            }
+        }
+    }
 }
 
 @Composable

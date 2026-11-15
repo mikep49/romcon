@@ -18,6 +18,7 @@ namespace RomCon
         readonly TrayApp app;
         readonly RemoteServer server;
         readonly Config config;
+        readonly Updater updater;
 
         readonly BarPanel tabBar = new BarPanel();
         readonly TabButton homeTab = new TabButton("Home");
@@ -67,6 +68,11 @@ namespace RomCon
                                                      "when you open RomCon, but not when it starts with Windows.", Ui.Small, Tone.Muted, true);
         readonly FlatButton adminButton = new FlatButton { Text = "Restart as administrator" };
         Rectangle optionsDivider;
+        readonly TextBlock updatesHeading = new TextBlock("Updates", Ui.Strong);
+        readonly TextBlock updateStatus = new TextBlock("", Ui.Small, Tone.Muted, true);
+        readonly FlatButton updateButton = new FlatButton { Kind = ButtonKind.Primary };
+        readonly FlatButton checkButton = new FlatButton { Text = "Check for updates" };
+        Rectangle updatesDivider;
         readonly TextBlock activityHeading = new TextBlock("Activity", Ui.Strong);
         readonly TextBox logBox = new TextBox();
 
@@ -76,11 +82,12 @@ namespace RomCon
         bool allowClose;
         bool refreshing;
 
-        public MainForm(TrayApp app, RemoteServer server, Config config, Icon icon)
+        public MainForm(TrayApp app, RemoteServer server, Config config, Updater updater, Icon icon)
         {
             this.app = app;
             this.server = server;
             this.config = config;
+            this.updater = updater;
 
             SuspendLayout();
             AutoScaleMode = AutoScaleMode.None;
@@ -104,6 +111,7 @@ namespace RomCon
 
             server.Changed += () => OnUi(RefreshAll);
             Log.Line += line => OnUi(() => AppendLog(line));
+            updater.Changed += () => OnUi(RefreshUpdates);
             NetworkChange.NetworkAddressChanged += (s, e) => OnUi(RefreshAddresses);
             SystemEvents.UserPreferenceChanged += OnWindowsColoursChanged;
             timer.Tick += (s, e) => Tick();
@@ -174,6 +182,11 @@ namespace RomCon
             home.Dock = DockStyle.Fill;
             settings.Dock = DockStyle.Fill;
             settings.Visible = false;
+        }
+
+        public void ShowSettings()
+        {
+            settingsTab.Checked = true;
         }
 
         void ShowPage()
@@ -264,6 +277,8 @@ namespace RomCon
                 }
             };
             adminButton.Click += (s, e) => app.RestartElevated();
+            checkButton.Click += (s, e) => updater.Check(false);
+            updateButton.Click += (s, e) => app.InstallUpdate();
 
             logBox.Multiline = true;
             logBox.ReadOnly = true;
@@ -278,12 +293,18 @@ namespace RomCon
             settings.Controls.AddRange(themeTiles);
             settings.Controls.AddRange(new Control[] { optionsHeading, startupToggle, notifyToggle, adminToggle, adminNote });
             if (!elevated) settings.Controls.Add(adminButton);
+            settings.Controls.AddRange(new Control[] { updatesHeading, updateStatus, updateButton, checkButton });
             settings.Controls.AddRange(new Control[] { activityHeading, logBox });
             settings.Paint += (s, e) =>
             {
-                using (var brush = new SolidBrush(Theme.Current.Line)) e.Graphics.FillRectangle(brush, optionsDivider);
+                using (var brush = new SolidBrush(Theme.Current.Line))
+                {
+                    e.Graphics.FillRectangle(brush, optionsDivider);
+                    e.Graphics.FillRectangle(brush, updatesDivider);
+                }
             };
             settings.Resize += (s, e) => LayoutSettings();
+            RefreshUpdates();
         }
 
         void SaveSettings()
@@ -442,12 +463,25 @@ namespace RomCon
             }
             int leftNeeds = y + padY;
 
-            // Activity: the log sits in an inset box that takes the rest of the card.
+            // Updates, above the activity
             x = right.Left + padX;
             w = right.Width - 2 * padX;
             y = right.Top + padY;
-            activityHeading.SetBounds(x, y, w, activityHeading.LineHeight);
+            updatesHeading.SetBounds(x, y, w, updatesHeading.LineHeight);
+            updateStatus.SetBounds(x, updatesHeading.Bottom + S(6), w, updateStatus.HeightFor(w));
+            int buttonX = x, buttonY = updateStatus.Bottom + S(12);
+            if (updater.Status.HasUpdate) // not updateButton.Visible, which is false while the page is hidden
+            {
+                updateButton.SetBounds(buttonX, buttonY, updateButton.FitWidth(), S(34));
+                buttonX = updateButton.Right + S(8);
+            }
+            checkButton.SetBounds(buttonX, buttonY, checkButton.FitWidth(), S(34));
+            updatesDivider = new Rectangle(x, checkButton.Bottom + S(18), w, S(1));
+
+            // Activity: the log sits in an inset box that takes the rest of the card.
+            activityHeading.SetBounds(x, updatesDivider.Bottom + S(16), w, activityHeading.LineHeight);
             var box = Rectangle.FromLTRB(x, activityHeading.Bottom + S(12), x + w, right.Bottom - padY);
+            int rightNeeds = box.Top + S(100) + padY;
             settings.Add(box, Surface.Inset, S(6));
             // A whole number of lines, so the last one is never cut in half.
             int lineHeight = logBox.Font.Height, logHeight = Math.Max(0, box.Height - S(20)) / lineHeight * lineHeight;
@@ -455,7 +489,7 @@ namespace RomCon
             UpdateLogScrollBar();
 
             settings.Invalidate();
-            settingsNeeds = leftNeeds + margin;
+            settingsNeeds = Math.Max(leftNeeds, rightNeeds) + margin;
             FitWindow();
         }
 
@@ -507,6 +541,42 @@ namespace RomCon
                 refreshing = false;
             }
             LayoutHome();
+        }
+
+        void RefreshUpdates()
+        {
+            var u = updater.Status;
+            string current = Updater.Current.ToString();
+            string latest = u.Latest?.Version.ToString();
+            switch (u.Stage)
+            {
+                case UpdateStage.Checking:
+                    updateStatus.Text = "Checking for updates…";
+                    break;
+                case UpdateStage.UpToDate:
+                    updateStatus.Text = "You have the latest version, " + current + ".";
+                    break;
+                case UpdateStage.Available:
+                    updateStatus.Text = "Version " + latest + " is available. You have " + current + ".";
+                    break;
+                case UpdateStage.Downloading:
+                    updateStatus.Text = "Downloading version " + latest + (u.Percent >= 0 ? "… " + u.Percent + "%" : "…");
+                    break;
+                case UpdateStage.Failed:
+                    updateStatus.Text = u.Error + (u.HasUpdate ? " Version " + latest + " is available." : "");
+                    break;
+                default:
+                    updateStatus.Text = "Version " + current + ".";
+                    break;
+            }
+            updateStatus.Tone = u.Stage == UpdateStage.Failed ? Tone.Error : Tone.Muted;
+            bool busy = u.Stage == UpdateStage.Checking || u.Stage == UpdateStage.Downloading;
+            updateButton.Visible = u.HasUpdate;
+            updateButton.Enabled = !busy;
+            updateButton.Text = "Update to " + latest;
+            checkButton.Enabled = !busy;
+            updateStatus.Invalidate();
+            if (settings.Visible) LayoutSettings();
         }
 
         void SetStatus(Tone tone, string title, string detail)
