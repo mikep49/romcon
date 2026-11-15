@@ -34,6 +34,9 @@ interface KeySink {
 class KeyboardCaptureView(context: Context) : View(context) {
     var sink: KeySink? = null
 
+    /** Close the soft keyboard once its Enter key is pressed. A hardware keyboard's Enter never closes it. */
+    var hideOnEnter = false
+
     init {
         isFocusable = true
         isFocusableInTouchMode = true
@@ -56,7 +59,16 @@ class KeyboardCaptureView(context: Context) : View(context) {
         override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
             super.commitText(text, newCursorPosition)
             flush()
+            if (text?.endsWith('\n') == true) enterPressed() // some keyboards type Enter as a line break
             return true
+        }
+
+        // Keys the soft keyboard sends as key events, Enter among them, still go to onKeyDown; this only notices them.
+        override fun sendKeyEvent(event: KeyEvent): Boolean {
+            val sent = super.sendKeyEvent(event)
+            val enter = event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+            if (enter && event.action == KeyEvent.ACTION_UP) enterPressed()
+            return sent
         }
 
         override fun finishComposingText(): Boolean {
@@ -75,7 +87,13 @@ class KeyboardCaptureView(context: Context) : View(context) {
 
         override fun performEditorAction(actionCode: Int): Boolean {
             sink?.onKey(Vk.ENTER, 0)
+            enterPressed()
             return true
+        }
+
+        private fun enterPressed() {
+            // Posted so the Enter itself is handled before the keyboard goes.
+            if (hideOnEnter) post { hideKeyboard() }
         }
 
         private fun flush() {
@@ -85,6 +103,10 @@ class KeyboardCaptureView(context: Context) : View(context) {
             e.clear()
             sink?.onText(text)
         }
+    }
+
+    fun hideKeyboard() {
+        context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = handleKey(event) || super.onKeyDown(keyCode, event)
@@ -134,18 +156,19 @@ class KeyboardController {
     }
 
     fun hide() {
-        val v = view ?: return
-        val imm = v.context.getSystemService(InputMethodManager::class.java)
-        imm?.hideSoftInputFromWindow(v.windowToken, 0)
+        view?.hideKeyboard()
     }
 }
 
 @Composable
-fun KeyboardCapture(controller: KeyboardController, sink: KeySink) {
+fun KeyboardCapture(controller: KeyboardController, sink: KeySink, hideOnEnter: Boolean) {
     val holder = remember { controller }
     AndroidView(
         factory = { ctx -> KeyboardCaptureView(ctx).also { holder.view = it } },
-        update = { it.sink = sink },
+        update = {
+            it.sink = sink
+            it.hideOnEnter = hideOnEnter
+        },
         onRelease = { holder.view = null },
         modifier = Modifier
             .size(1.dp)

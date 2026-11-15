@@ -253,6 +253,9 @@ private fun MouseSettings(vm: AppViewModel, s: AppSettings) {
 private fun KeyboardSettings(vm: AppViewModel, s: AppSettings) {
     Section("Typing")
     SwitchSetting("Show what you type", "Above the phone keyboard", s.typingPreview) { v -> vm.updateSettings { it.copy(typingPreview = v) } }
+    SwitchSetting("Close keyboard on Enter", "Turn off to type several lines", s.hideKeyboardOnEnter) { v ->
+        vm.updateSettings { it.copy(hideKeyboardOnEnter = v) }
+    }
 
     Section("Modifier keys")
     Help("Tap Ctrl, Alt, Shift or Win to use it with the next key, like Ctrl then C to copy. Long-press to keep it on.")
