@@ -145,10 +145,10 @@ private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
     PageLink(
         Icons.Filled.PlayCircle,
         "Media controls",
-        if (s.lockScreenMedia) "On the lock screen while the PC is playing" else "Off",
+        if (s.lockScreenMedia) "On the lock screen" else "Off",
     ) { vm.openSettingsPage(SettingsPage.MEDIA) }
     PageLink(Icons.Filled.SwapVert, "Connection", "Pointer movement over ${s.transport.name}") { vm.openSettingsPage(SettingsPage.CONNECTION) }
-    PageLink(Icons.Filled.Tune, "General", "Vibration, keep screen on") { vm.openSettingsPage(SettingsPage.GENERAL) }
+    PageLink(Icons.Filled.Tune, "General", "Vibration, keep screen on, lock button") { vm.openSettingsPage(SettingsPage.GENERAL) }
 
     Section("About")
     Help("RomCon $version\nThe PC sees this phone as \"${vm.deviceName}\".")
@@ -159,11 +159,7 @@ private fun AppearanceSettings(vm: AppViewModel, s: AppSettings) {
     Section("Theme")
     Column(Modifier.selectableGroup()) {
         ThemeMode.entries.forEach { mode ->
-            val summary = when (mode) {
-                ThemeMode.SYSTEM -> "Follow the phone's light or dark setting"
-                ThemeMode.LIGHT, ThemeMode.DARK -> null
-                ThemeMode.OLED -> "Pure black background, easy on OLED screens and the battery"
-            }
+            val summary = if (mode == ThemeMode.OLED) "Pure black background" else null
             RadioSetting(mode.label, summary, selected = s.theme == mode) { vm.updateSettings { it.copy(theme = mode) } }
         }
     }
@@ -174,73 +170,45 @@ private fun MouseSettings(vm: AppViewModel, s: AppSettings) {
     Section("Pointer")
     SliderSetting("Pointer speed", s.pointerSpeed, 0.3f..3f, "%.1f×") { v -> vm.updateSettings { it.copy(pointerSpeed = v) } }
     SliderSetting("Acceleration", s.acceleration, 0f..1.5f, "%.1f") { v -> vm.updateSettings { it.copy(acceleration = v) } }
-    SwitchSetting("Tap to click", "Tap to left-click, two-finger tap to right-click, three-finger tap to middle-click", s.tapToClick) { v ->
-        vm.updateSettings { it.copy(tapToClick = v) }
-    }
+    SwitchSetting("Tap to click", null, s.tapToClick) { v -> vm.updateSettings { it.copy(tapToClick = v) } }
     if (!s.tapToClick && BarButton.LEFT_CLICK !in s.bottomBar) {
-        Help("With tap to click off there is nothing to click with. Add Left click under Settings, Bottom bar.")
+        Help("To click, add Left click to the bottom bar.")
     }
 
     Section("Scrolling")
     SliderSetting("Scroll speed", s.scrollSpeed, 0.3f..3f, "%.1f×") { v -> vm.updateSettings { it.copy(scrollSpeed = v) } }
-    SwitchSetting("Natural scrolling", "Content follows your fingers, like on the phone", s.naturalScroll) { v ->
+    SwitchSetting("Natural scrolling", "Content moves with your fingers", s.naturalScroll) { v ->
         vm.updateSettings { it.copy(naturalScroll = v) }
     }
-    SwitchSetting("Smooth scrolling", "Turn off if an older app scrolls too little or not at all", s.smoothScroll) { v ->
+    SwitchSetting("Smooth scrolling", "Turn off if some apps don't scroll", s.smoothScroll) { v ->
         vm.updateSettings { it.copy(smoothScroll = v) }
     }
-    SwitchSetting("Momentum", "Keep scrolling briefly after a quick swipe", s.scrollMomentum) { v ->
+    SwitchSetting("Momentum", "Keeps scrolling after a quick swipe", s.scrollMomentum) { v ->
         vm.updateSettings { it.copy(scrollMomentum = v) }
     }
-
-    Section("Scroll bar")
-    SwitchSetting("Show the scroll bar", "A strip down the right side of the trackpad: slide one finger along it to scroll", s.scrollBar) { v ->
+    SwitchSetting("Scroll bar", "Slide along the right edge of the trackpad", s.scrollBar) { v ->
         vm.updateSettings { it.copy(scrollBar = v) }
     }
     if (s.scrollBar) {
-        SwitchSetting(
-            "Reverse the scroll bar",
-            if (s.scrollBarReversed) "Sliding down moves up the page" else "Sliding down moves down the page",
-            s.scrollBarReversed,
-        ) { v -> vm.updateSettings { it.copy(scrollBarReversed = v) } }
+        SwitchSetting("Reverse the scroll bar", null, s.scrollBarReversed) { v -> vm.updateSettings { it.copy(scrollBarReversed = v) } }
     }
 
     Section("Gestures")
     Help(
-        "One finger: move the pointer\n" +
-            "Tap: left click · double-tap: double click\n" +
-            "Double-tap and drag: drag (select text, move windows)\n" +
-            "Two fingers: scroll · two-finger tap: right click\n" +
-            "Three-finger tap: middle click\n" +
-            "Scroll bar: slide one finger up or down to scroll",
+        "Two-finger tap: right-click\n" +
+            "Three-finger tap: middle-click\n" +
+            "Two fingers: scroll\n" +
+            "Double-tap and drag: drag",
     )
 }
 
 @Composable
 private fun KeyboardSettings(vm: AppViewModel, s: AppSettings) {
-    Section("Modifier keys")
-    Help(
-        "Open Shortcuts or Keys from the bottom bar, then tap Ctrl, Alt, Shift or Win to apply it to the next key.\n" +
-            "Long-press one to lock it on until you tap it again.\n" +
-            "With a modifier on, letters typed on the phone keyboard become shortcuts: Ctrl, then C, copies.",
-    )
-
     Section("Typing")
-    SwitchSetting(
-        "Show what you type",
-        "A box above the phone keyboard repeats what you type on the PC, so you can spot a typo without looking up",
-        s.typingPreview,
-    ) { v -> vm.updateSettings { it.copy(typingPreview = v) } }
-    if (s.typingPreview) {
-        Help(
-            "The box only knows what this phone typed. It starts again when you press Enter, click, or use a shortcut, " +
-                "because the caret on the PC may have moved.",
-        )
-    }
-    Help(
-        "Suggestions and autocorrect stay off while typing to the PC, since the phone can't see what's on its screen.\n" +
-            "Use Send text to write a longer passage on the phone and send it in one go.",
-    )
+    SwitchSetting("Show what you type", "Above the phone keyboard", s.typingPreview) { v -> vm.updateSettings { it.copy(typingPreview = v) } }
+
+    Section("Modifier keys")
+    Help("Tap Ctrl, Alt, Shift or Win to use it with the next key, like Ctrl then C to copy. Long-press to keep it on.")
 }
 
 @Composable
@@ -249,7 +217,7 @@ private fun BottomBarSettings(vm: AppViewModel, s: AppSettings) {
     val setBar: (List<BarButton>) -> Unit = { buttons -> vm.updateSettings { it.copy(bottomBar = buttons) } }
     val full = bar.size >= BarButton.MAX_ON_BAR
 
-    Help("The buttons under the trackpad, from left to right. Up to ${BarButton.MAX_ON_BAR} fit.")
+    Help("Up to ${BarButton.MAX_ON_BAR} buttons fit under the trackpad.")
 
     Section("On the bar")
     bar.forEachIndexed { i, button ->
@@ -271,7 +239,7 @@ private fun BottomBarSettings(vm: AppViewModel, s: AppSettings) {
     }
 
     Section("More buttons")
-    if (full) Help("The bar is full. Remove a button to add another.")
+    if (full) Help("The bar is full.")
     BarButton.entries.filterNot { it in bar }.forEach { button ->
         key(button) {
             BarButtonRow(button) {
@@ -283,7 +251,7 @@ private fun BottomBarSettings(vm: AppViewModel, s: AppSettings) {
     }
 
     TextButton(onClick = { setBar(BarButton.DEFAULT) }, enabled = bar != BarButton.DEFAULT, modifier = Modifier.padding(top = 12.dp)) {
-        Text("Reset to Keyboard, Windows key, Shortcuts")
+        Text("Reset to default")
     }
 }
 
@@ -300,7 +268,7 @@ private fun BarButtonRow(button: BarButton, controls: @Composable () -> Unit) {
         Spacer(Modifier.width(20.dp))
         Column(Modifier.weight(1f)) {
             Text(button.title, style = MaterialTheme.typography.bodyLarge)
-            Text(button.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            button.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         controls()
     }
@@ -311,19 +279,14 @@ private fun MediaSettings(vm: AppViewModel, s: AppSettings) {
     val status by MediaLink.state.collectAsStateWithLifecycle()
     val pcs by vm.pcs.collectAsStateWithLifecycle()
 
-    Section("Lock screen")
     SwitchSetting(
-        "Show the PC's media controls",
-        "While a paired PC is playing something: play and pause, skip, and the PC's volume, without unlocking the phone",
+        "Show on the lock screen",
+        "Play, pause, skip and volume while the PC plays something",
         s.lockScreenMedia,
     ) { v -> vm.updateSettings { it.copy(lockScreenMedia = v) } }
     if (!s.lockScreenMedia) return
 
-    SwitchSetting(
-        "Volume buttons change the PC's volume",
-        "While the PC is playing. When it's paused, they go back to the phone's own volume.",
-        s.volumeKeys,
-    ) { v -> vm.updateSettings { it.copy(volumeKeys = v) } }
+    SwitchSetting("Volume buttons control the PC", "While it's playing", s.volumeKeys) { v -> vm.updateSettings { it.copy(volumeKeys = v) } }
 
     Section("Status")
     val outdated = pcs.filter(vm::lacksMedia)
@@ -331,21 +294,18 @@ private fun MediaSettings(vm: AppViewModel, s: AppSettings) {
     Help(
         when {
             pcs.isEmpty() -> "Pair a PC first."
-            linked != null && linked.showing -> "${linked.pcName} is playing. The controls are on the lock screen and with your notifications."
-            linked != null -> "Connected to ${linked.pcName}. The controls appear when it plays something and go away when it stops."
+            linked != null && linked.showing -> "Showing what ${linked.pcName} is playing."
+            linked != null -> "Connected to ${linked.pcName}. The controls appear when it plays something."
             outdated.size == pcs.size -> "Nothing to connect to yet."
-            else -> "Looking for your PC. The controls appear once it's on, in reach and playing something."
+            else -> "Looking for your PC. The controls appear once it's on and playing something."
         },
     )
     if (outdated.isNotEmpty()) {
-        Help("RomCon on ${outdated.joinToString(", ") { it.name }} is too old for this. Update it there, then connect to it once from this app.")
+        Help("RomCon on ${outdated.joinToString(", ") { it.name }} is too old for this. Update it, then connect to it once.")
     }
 
     Section("In the background")
-    Help(
-        "RomCon stays connected to the PC to know what it's playing. That costs very little battery: " +
-            "nothing is sent while nothing changes, and the phone can sleep.",
-    )
+    Help("RomCon stays connected to see what's playing. It uses very little battery.")
     BackgroundNotificationNote()
 }
 
@@ -380,16 +340,10 @@ private fun BackgroundNotificationNote() {
         }
     }
     if (allowed) {
-        Help(
-            "Android shows a silent notification while an app does this. It never appears on the lock screen. " +
-                "To hide it altogether, long-press it and turn it off; the media controls keep working.",
-        )
+        Help("Android shows a silent notification for this. To hide it, long-press it and turn it off; the controls keep working.")
         return
     }
-    Help(
-        "Android would show a silent notification for this, but notifications are off for RomCon, so it's hidden. " +
-            "Media controls show regardless. If yours don't appear, allow notifications.",
-    )
+    Help("Notifications are off for RomCon. If the controls don't appear, allow them.")
     TextButton(
         onClick = {
             askedAt = SystemClock.elapsedRealtime()
@@ -406,26 +360,26 @@ private fun ConnectionSettings(vm: AppViewModel, s: AppSettings) {
     Column(Modifier.selectableGroup()) {
         RadioSetting(
             "TCP",
-            "Everything shares one connection that resends whatever the network drops. On weak Wi-Fi the pointer can freeze for a moment while it does.",
+            "Reliable, but the pointer can stutter on weak Wi-Fi",
             selected = s.transport == Transport.TCP,
         ) { vm.updateSettings { it.copy(transport = Transport.TCP) } }
         RadioSetting(
             "UDP",
-            "Movement is sent without waiting for resends, so the pointer keeps up on weak Wi-Fi. A dropped packet loses a little movement instead.",
+            "Smoother on weak Wi-Fi, but a little movement can get lost",
             selected = s.transport == Transport.UDP,
         ) { vm.updateSettings { it.copy(transport = Transport.UDP) } }
     }
-    Help("Clicks, keys and text always use TCP, so none of them can get lost. Both are encrypted.")
+    Help("Clicks and typing always use TCP. Everything is encrypted.")
 
     if (s.transport == Transport.UDP) {
         Section("Status")
         val connected = conn as? ConnState.Connected
         Help(
             when {
-                connected == null -> "Used from the next time you connect. If UDP can't get through, the app carries on with TCP."
-                connected.udp -> "Pointer movement to ${connected.pc.name} is going over UDP."
-                else -> "Waiting for ${connected.pc.name} to answer over UDP. Until it does, pointer movement uses TCP.\n" +
-                    "If this stays, update RomCon on the PC and check that Windows Firewall lets it receive UDP on port ${connected.pc.port}."
+                connected == null -> "Starts when you connect. If UDP can't get through, TCP is used."
+                connected.udp -> "Using UDP with ${connected.pc.name}."
+                else -> "Using TCP until ${connected.pc.name} answers over UDP. If it never does, update RomCon on the PC " +
+                    "or allow UDP port ${connected.pc.port} in Windows Firewall."
             },
         )
     }
@@ -433,11 +387,9 @@ private fun ConnectionSettings(vm: AppViewModel, s: AppSettings) {
 
 @Composable
 private fun GeneralSettings(vm: AppViewModel, s: AppSettings) {
-    Section("Feedback")
-    SwitchSetting("Vibrate on clicks", "Also on key presses", s.haptics) { v -> vm.updateSettings { it.copy(haptics = v) } }
-
-    Section("Screen")
-    SwitchSetting("Keep screen on", "While controlling a PC", s.keepScreenOn) { v -> vm.updateSettings { it.copy(keepScreenOn = v) } }
+    SwitchSetting("Vibrate on clicks and keys", null, s.haptics) { v -> vm.updateSettings { it.copy(haptics = v) } }
+    SwitchSetting("Keep screen on", null, s.keepScreenOn) { v -> vm.updateSettings { it.copy(keepScreenOn = v) } }
+    SwitchSetting("Lock PC button", null, s.lockButton) { v -> vm.updateSettings { it.copy(lockButton = v) } }
 }
 
 @Composable

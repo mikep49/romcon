@@ -52,7 +52,8 @@ Everything the [README](../README.md) leaves out.
 - If the phone is on the PC's Wi-Fi it uses the faster LAN path, and it follows the PC when the router gives it a new address.
 - Pointer movement and scrolling can go over UDP instead of TCP (Settings, Connection), which keeps the pointer smooth on weak Wi-Fi. Clicks, keys and text always use TCP. If UDP can't get through, the app carries on with TCP.
 - Reconnects automatically. When the app goes to the background it stops controlling the PC, and the PC releases any held keys or buttons. Only the connection for the lock screen media controls stays.
-- *Lock PC* button, *Pause remote control* on the PC, and a notification when a phone connects.
+- A *Lock PC* button, off by default (Settings, General). Windows only lets you unlock at the PC itself.
+- *Pause remote control* on the PC, and a notification when a phone connects.
 
 ### Themes
 
