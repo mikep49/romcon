@@ -69,6 +69,8 @@ data class AppSettings(
     val scrollBarReversed: Boolean = false,
     val tapToClick: Boolean = true,
     val typingPreview: Boolean = true,
+    /** The phone keyboard closes after its Enter key, as after sending a message or a search. */
+    val hideKeyboardOnEnter: Boolean = true,
     val haptics: Boolean = true,
     val keepScreenOn: Boolean = true,
     /** A lock button on the control screen. Off by default: a locked PC can only be unlocked at the PC. */
@@ -165,6 +167,7 @@ class Store(context: Context) {
             scrollBarReversed = prefs.getBoolean("scrollBarReversed", d.scrollBarReversed),
             tapToClick = prefs.getBoolean("tapToClick", d.tapToClick),
             typingPreview = prefs.getBoolean("typingPreview", d.typingPreview),
+            hideKeyboardOnEnter = prefs.getBoolean("hideKeyboardOnEnter", d.hideKeyboardOnEnter),
             haptics = prefs.getBoolean("haptics", d.haptics),
             keepScreenOn = prefs.getBoolean("keepScreenOn", d.keepScreenOn),
             lockButton = prefs.getBoolean("lockButton", d.lockButton),
@@ -189,6 +192,7 @@ class Store(context: Context) {
             putBoolean("scrollBarReversed", s.scrollBarReversed)
             putBoolean("tapToClick", s.tapToClick)
             putBoolean("typingPreview", s.typingPreview)
+            putBoolean("hideKeyboardOnEnter", s.hideKeyboardOnEnter)
             putBoolean("haptics", s.haptics)
             putBoolean("keepScreenOn", s.keepScreenOn)
             putBoolean("lockButton", s.lockButton)

@@ -212,7 +212,7 @@ fun ControlScreen(vm: AppViewModel) {
             },
         )
 
-        KeyboardCapture(keyboard, sink)
+        KeyboardCapture(keyboard, sink, hideOnEnter = settings.hideKeyboardOnEnter)
     }
 
     if (textDialog) {
