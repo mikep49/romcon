@@ -93,6 +93,15 @@ namespace RomCon
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool DestroyIcon(IntPtr hIcon);
 
+        public const uint MSGFLT_ADD = 1;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern uint RegisterWindowMessage(string lpString);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ChangeWindowMessageFilter(uint message, uint dwFlag);
+
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19; // Windows 10 before 2004
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         public const int DWMWA_CAPTION_COLOR = 35; // Windows 11

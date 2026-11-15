@@ -24,6 +24,7 @@ namespace RomCon
         public int Port = Proto.DefaultPort;
         public string ServerName = Environment.MachineName;
         public bool NotifyOnConnect = true;
+        public bool AlwaysAdmin;
         public ThemeMode Theme = ThemeMode.System;
 
         readonly List<PairedDevice> devices = new List<PairedDevice>();
@@ -59,6 +60,9 @@ namespace RomCon
                         case "notify":
                             c.NotifyOnConnect = value != "0" && !value.Equals("false", StringComparison.OrdinalIgnoreCase);
                             break;
+                        case "admin":
+                            c.AlwaysAdmin = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+                            break;
                         case "theme":
                             if (Enum.TryParse(value, true, out ThemeMode mode) && Enum.IsDefined(typeof(ThemeMode), mode)) c.Theme = mode;
                             break;
@@ -92,6 +96,7 @@ namespace RomCon
             sb.AppendLine("name=" + ServerName);
             sb.AppendLine("notify=" + (NotifyOnConnect ? "1" : "0"));
             sb.AppendLine("theme=" + Theme.ToString().ToLowerInvariant());
+            sb.AppendLine("admin=" + (AlwaysAdmin ? "1" : "0"));
             WriteAtomically(SettingsPath, sb.ToString());
         }
 

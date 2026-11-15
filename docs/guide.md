@@ -74,6 +74,7 @@ If the phone can't reach the PC over Tailscale, check that Windows Firewall allo
 
 - **Pairing is required.** A phone can only control the PC after you pair it with a PIN that's shown on the PC screen. The PIN works once and expires after 3 minutes. Pairing closes after 5 wrong attempts. Pairing is only open while you have it turned on.
 - **Encrypted.** All TCP traffic is TLS 1.2, and pointer movement sent over UDP is AES-256-GCM with a key the PC issues over that TLS connection. The PC makes its own certificate on first run (stored DPAPI-encrypted in `%APPDATA%\RomCon`). The phone pins that certificate when pairing and refuses any other, so a device impersonating the PC never sees your keystrokes. The matching *PC code* on both screens guards the first pairing.
+- **Administrator rights.** With *Always run as administrator* and *Start with Windows* both on, RomCon gets full rights at every sign-in without a prompt. Keep `RomCon.exe` in a folder only administrators can change, such as one under `C:\Program Files`, so another program can't swap it out first.
 - **Revocable.** Each phone gets its own random token. The PC stores only a hash of it, and removing the phone on the PC revokes it at once. Tokens are kept in the app's private storage and excluded from Android backups.
 
 ## Limitations
@@ -81,7 +82,7 @@ If the phone can't reach the PC over Tailscale, check that Windows Firewall allo
 These are Windows rules, not bugs.
 
 - **Lock screen, UAC prompts, Ctrl+Alt+Del**: Windows blocks injected input on the secure desktop. Lock the PC from the phone, but unlock it at the PC.
-- **Admin windows** (Task Manager, installers, admin terminals): Windows ignores input from a normal app aimed at an elevated window. Use **Restart as administrator** in the tray menu or window when you need to control those.
+- **Admin windows** (Task Manager, installers, admin terminals): Windows ignores input from a normal app aimed at an elevated window. To control those, turn on **Always run as administrator** on the Settings tab, or use **Restart as administrator** in the tray menu or window for just this once. With it always on, Windows asks for permission when you open RomCon. When RomCon starts with Windows, a scheduled task named *RomCon* starts it as administrator without asking.
 - Some games read raw hardware input and may ignore injected mouse or keyboard events.
 
 ## Development

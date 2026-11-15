@@ -62,8 +62,9 @@ namespace RomCon
         readonly TextBlock optionsHeading = new TextBlock("Options", Ui.Strong);
         readonly ToggleRow startupToggle = new ToggleRow("Start with Windows");
         readonly ToggleRow notifyToggle = new ToggleRow("Notify me when a phone connects");
-        readonly TextBlock adminTitle = new TextBlock("Run as administrator", Ui.Body);
-        readonly TextBlock adminNote = new TextBlock("Needed to control apps that run as administrator, like Task Manager.", Ui.Small, Tone.Muted, true);
+        readonly ToggleRow adminToggle = new ToggleRow("Always run as administrator");
+        readonly TextBlock adminNote = new TextBlock("Needed to control apps that run as administrator, like Task Manager. Windows asks for permission " +
+                                                     "when you open RomCon, but not when it starts with Windows.", Ui.Small, Tone.Muted, true);
         readonly FlatButton adminButton = new FlatButton { Text = "Restart as administrator" };
         Rectangle optionsDivider;
         readonly TextBlock activityHeading = new TextBlock("Activity", Ui.Strong);
@@ -239,6 +240,29 @@ namespace RomCon
                 config.NotifyOnConnect = notifyToggle.Checked;
                 SaveSettings();
             };
+            adminToggle.CheckedChanged += (s, e) =>
+            {
+                if (refreshing) return;
+                config.AlwaysAdmin = adminToggle.Checked;
+                SaveSettings();
+                if (config.AlwaysAdmin && !elevated)
+                {
+                    // Restarting puts it into effect now. The new RomCon also moves starting with Windows over to the scheduled task.
+                    if (app.RestartElevated()) return;
+                    config.AlwaysAdmin = false; // Windows didn't give the rights
+                    SaveSettings();
+                    RefreshAll();
+                    return;
+                }
+                try
+                {
+                    if (app.StartWithWindows) app.StartWithWindows = true; // moves it to the scheduled task or back to the Run key
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "Couldn't change the startup setting: " + ex.Message, "RomCon");
+                }
+            };
             adminButton.Click += (s, e) => app.RestartElevated();
 
             logBox.Multiline = true;
@@ -252,9 +276,8 @@ namespace RomCon
             settings.Controls.Add(themeHeading);
             settings.Controls.Add(themeNote);
             settings.Controls.AddRange(themeTiles);
-            settings.Controls.AddRange(new Control[] { optionsHeading, startupToggle, notifyToggle });
-            // An elevated RomCon has nothing to offer here.
-            if (!elevated) settings.Controls.AddRange(new Control[] { adminTitle, adminNote, adminButton });
+            settings.Controls.AddRange(new Control[] { optionsHeading, startupToggle, notifyToggle, adminToggle, adminNote });
+            if (!elevated) settings.Controls.Add(adminButton);
             settings.Controls.AddRange(new Control[] { activityHeading, logBox });
             settings.Paint += (s, e) =>
             {
@@ -407,13 +430,13 @@ namespace RomCon
             optionsHeading.SetBounds(x, y, w, optionsHeading.LineHeight);
             startupToggle.SetBounds(x, optionsHeading.Bottom + S(8), w, S(40));
             notifyToggle.SetBounds(x, startupToggle.Bottom, w, S(40));
-            y = notifyToggle.Bottom;
-            optionsDivider = Rectangle.Empty;
+            optionsDivider = new Rectangle(x, notifyToggle.Bottom + S(8), w, S(1));
+            adminToggle.SetBounds(x, optionsDivider.Bottom + S(8), w, S(40));
+            adminNote.SetBounds(x, adminToggle.Bottom, w, adminNote.HeightFor(w));
+            y = adminNote.Bottom;
             if (!elevated)
             {
-                optionsDivider = new Rectangle(x, y + S(8), w, S(1));
-                adminTitle.SetBounds(x, optionsDivider.Bottom + S(14), w, adminTitle.LineHeight);
-                adminNote.SetBounds(x, adminTitle.Bottom + S(2), w, adminNote.HeightFor(w));
+                // For a one-off, or another try after Windows' prompt was turned down.
                 adminButton.SetBounds(x, adminNote.Bottom + S(12), adminButton.FitWidth(), S(34));
                 y = adminButton.Bottom;
             }
@@ -476,6 +499,7 @@ namespace RomCon
                 RefreshPairing();
                 RefreshDevices(sessions);
                 notifyToggle.Checked = config.NotifyOnConnect;
+                adminToggle.Checked = config.AlwaysAdmin;
                 try { startupToggle.Checked = app.StartWithWindows; } catch { }
             }
             finally

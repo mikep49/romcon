@@ -60,7 +60,7 @@ Closing the PC window leaves RomCon running in the tray. Turn on **Start with Wi
 Windows itself blocks a few things:
 
 - **Lock screen and UAC prompts.** You can lock the PC from the phone, but you unlock it at the PC.
-- **Administrator windows**, such as Task Manager and installers. To control these, choose **Restart as administrator** in RomCon's tray menu.
+- **Administrator windows**, such as Task Manager and installers. To control these, turn on **Always run as administrator** on RomCon's Settings tab, or choose **Restart as administrator** in its tray menu for just this once.
 - **Some games** read the hardware directly and ignore RomCon's input.
 
 ## More
