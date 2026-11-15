@@ -15,8 +15,6 @@ namespace RomCon
     sealed class TrayApp : ApplicationContext
     {
         public static readonly TimeSpan PairingWindow = TimeSpan.FromMinutes(3);
-        const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        const string RunValue = "RomCon";
 
         readonly Options options;
         readonly Config config;
@@ -28,13 +26,17 @@ namespace RomCon
         readonly RegisteredWaitHandle showWait;
         bool exiting;
 
-        public TrayApp(Options options, EventWaitHandle showEvent)
+        public TrayApp(Options options, Config config, EventWaitHandle showEvent)
         {
             this.options = options;
-            config = Config.Load(options.DataDir);
-            if (options.Port.HasValue) config.Port = options.Port.Value;
-            Log.Init(config.Dir);
+            this.config = config;
             Log.Info("RomCon starting" + (options.DryRun ? " in dry-run mode (input is logged, not sent)" : "") + (IsElevated ? " as administrator" : "") + ".");
+
+            if (IsElevated)
+            {
+                try { Startup.Settle(config.AlwaysAdmin); }
+                catch (Exception ex) { Log.Info("Couldn't update how RomCon starts with Windows: " + ex.Message); }
+            }
 
             var certificate = Identity.LoadOrCreate(config.Dir);
             server = new RemoteServer(config, certificate, new InputInjector(options.DryRun), new MediaWatcher(options.DryRun));
@@ -57,6 +59,9 @@ namespace RomCon
             if (!IsElevated) menu.Items.Add("Restart as administrator", null, (s, e) => RestartElevated());
             menu.Items.Add("Exit", null, (s, e) => Exit());
 
+            // Explorer asks programs to add their tray icons again when the taskbar comes back after a restart, or comes up after
+            // RomCon at sign-in. Windows drops that request on its way to a program running as administrator unless it is let in.
+            if (IsElevated) Native.ChangeWindowMessageFilter(Native.RegisterWindowMessage("TaskbarCreated"), Native.MSGFLT_ADD);
             tray = new NotifyIcon { Icon = iconIdle, Text = "RomCon", ContextMenuStrip = menu, Visible = true };
             tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
 
@@ -92,18 +97,8 @@ namespace RomCon
 
         public bool StartWithWindows
         {
-            get
-            {
-                using (var key = Registry.CurrentUser.OpenSubKey(RunKey)) return key?.GetValue(RunValue) != null;
-            }
-            set
-            {
-                using (var key = Registry.CurrentUser.CreateSubKey(RunKey))
-                {
-                    if (value) key.SetValue(RunValue, "\"" + Application.ExecutablePath + "\" --minimized");
-                    else key.DeleteValue(RunValue, false);
-                }
-            }
+            get => Startup.Enabled;
+            set => Startup.Set(value, config.AlwaysAdmin);
         }
 
         public void StartPairing()
@@ -120,18 +115,28 @@ namespace RomCon
             form.Activate();
         }
 
-        public void RestartElevated()
+        /// <summary>Restarts RomCon as administrator. False if Windows didn't let it, usually because the user said no.</summary>
+        public bool RestartElevated()
         {
-            var args = "--restarted" + (options.Minimized ? " --minimized" : "") + (options.DryRun ? " --dry-run" : "");
+            if (!StartElevated(options, !form.Visible)) return false; // with the window open, it comes back open
+            Exit();
+            return true;
+        }
+
+        /// <summary>Starts another RomCon with the same options as administrator, which takes over once this one exits.</summary>
+        public static bool StartElevated(Options options, bool minimized)
+        {
             try
             {
-                Process.Start(new ProcessStartInfo(Application.ExecutablePath, args) { UseShellExecute = true, Verb = "runas" });
+                var start = new ProcessStartInfo(Application.ExecutablePath, options.RestartArgs(minimized)) { UseShellExecute = true, Verb = "runas" };
+                Process.Start(start);
+                return true;
             }
-            catch (Win32Exception)
+            catch (Win32Exception ex)
             {
-                return; // the user said no to the UAC prompt
+                if (ex.NativeErrorCode != 1223) Log.Info("Couldn't restart as administrator: " + ex.Message); // 1223: the user said no
+                return false;
             }
-            Exit();
         }
 
         public void Exit()
