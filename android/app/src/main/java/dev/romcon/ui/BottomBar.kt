@@ -52,6 +52,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.romcon.data.BarButton
+import dev.romcon.data.BarItem
+import dev.romcon.data.CustomShortcut
 import dev.romcon.net.Proto
 
 val BarButton.icon: ImageVector
@@ -91,31 +93,33 @@ private val BarButton.repeats: Boolean
 /**
  * The row of buttons under the trackpad; which ones, and in what order, is chosen in Settings.
  * [onPress] fires for a tap (and for each repeat of a held volume button); [onMouse] mirrors the finger on a mouse button.
+ * [onShortcut] fires for a tap on one of the user's own shortcuts, looked up in [shortcuts].
  */
 @Composable
 fun BottomBar(
-    buttons: List<BarButton>,
+    items: List<BarItem>,
+    shortcuts: List<CustomShortcut>,
     selected: (BarButton) -> Boolean,
     onPress: (BarButton) -> Unit,
+    onShortcut: (CustomShortcut) -> Unit,
     onMouse: (button: Int, down: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-        buttons.forEach { button ->
+        items.forEach { item ->
             // Keyed, so a finger resting on one button isn't handed to another when the bar is rearranged.
-            key(button) {
+            key(item) {
                 val slot = Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
-                val mouse = button.mouseButton
-                val on = selected(button)
-                when {
-                    mouse != null -> HeldBarItem(button, slot, repeat = false) { down -> onMouse(mouse, down) }
-                    button.repeats -> HeldBarItem(button, slot, repeat = true) { down -> if (down) onPress(button) }
-                    else -> BarItem(
-                        button = button,
-                        icon = if (button == BarButton.KEYBOARD && on) Icons.Filled.KeyboardHide else button.icon,
-                        highlighted = on,
-                        modifier = slot.clickable(role = Role.Button) { onPress(button) },
-                    )
+                when (item) {
+                    is BarItem.Builtin -> BuiltinBarItem(item.button, slot, selected(item.button), onPress, onMouse)
+                    is BarItem.Custom -> shortcuts.firstOrNull { it.id == item.id }?.let { shortcut ->
+                        BarCell(
+                            label = shortcut.title,
+                            description = shortcut.title,
+                            highlighted = false,
+                            modifier = slot.clickable(role = Role.Button) { onShortcut(shortcut) },
+                        ) { color -> ShortcutGlyph(shortcut, color) }
+                    }
                 }
             }
         }
@@ -123,18 +127,44 @@ fun BottomBar(
 }
 
 @Composable
-private fun BarItem(button: BarButton, icon: ImageVector, highlighted: Boolean, modifier: Modifier) {
+private fun BuiltinBarItem(
+    button: BarButton,
+    modifier: Modifier,
+    on: Boolean,
+    onPress: (BarButton) -> Unit,
+    onMouse: (button: Int, down: Boolean) -> Unit,
+) {
+    val mouse = button.mouseButton
+    when {
+        mouse != null -> HeldBarItem(button, modifier, repeat = false) { down -> onMouse(mouse, down) }
+        button.repeats -> HeldBarItem(button, modifier, repeat = true) { down -> if (down) onPress(button) }
+        else -> BarCell(
+            button = button,
+            icon = if (button == BarButton.KEYBOARD && on) Icons.Filled.KeyboardHide else button.icon,
+            highlighted = on,
+            modifier = modifier.clickable(role = Role.Button) { onPress(button) },
+        )
+    }
+}
+
+@Composable
+private fun BarCell(button: BarButton, icon: ImageVector, highlighted: Boolean, modifier: Modifier) {
+    // Screen readers get the full name: "Volume down" rather than "Vol −".
+    BarCell(button.label, button.title, highlighted, modifier) { color -> Icon(icon, contentDescription = null, tint = color) }
+}
+
+@Composable
+private fun BarCell(label: String, description: String, highlighted: Boolean, modifier: Modifier, icon: @Composable (Color) -> Unit) {
     val color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Column(modifier.padding(horizontal = 2.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, contentDescription = null, tint = color)
+        icon(color)
         Text(
-            button.label,
+            label,
             style = MaterialTheme.typography.labelSmall,
             color = color,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            // Screen readers get the full name: "Volume down" rather than "Vol −".
-            modifier = Modifier.semantics { contentDescription = button.title },
+            modifier = Modifier.semantics { contentDescription = description },
         )
     }
 }
@@ -147,7 +177,7 @@ private fun BarItem(button: BarButton, icon: ImageVector, highlighted: Boolean, 
 private fun HeldBarItem(button: BarButton, modifier: Modifier, repeat: Boolean, onChange: (Boolean) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     val current by rememberUpdatedState(onChange)
-    BarItem(
+    BarCell(
         button = button,
         icon = button.icon,
         highlighted = pressed,

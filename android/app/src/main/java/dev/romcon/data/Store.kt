@@ -51,26 +51,14 @@ enum class BarButton(val label: String, val title: String, val summary: String? 
     MUTE("Mute", "Mute"),
     LEFT_CLICK("Left", "Left click", "Hold it to drag"),
     RIGHT_CLICK("Right", "Right click"),
-    MIDDLE_CLICK("Middle", "Middle click");
-
-    companion object {
-        const val MAX_ON_BAR = 5
-        val DEFAULT = listOf(KEYBOARD, WINDOWS, SHORTCUTS)
-
-        /** Reads a saved bar, dropping names this version doesn't know. An unusable value gives the default bar. */
-        fun parse(saved: String?): List<BarButton> {
-            if (saved == null) return DEFAULT
-            val buttons = saved.split(',').mapNotNull { name -> entries.firstOrNull { it.name == name } }
-            return buttons.distinct().take(MAX_ON_BAR).ifEmpty { DEFAULT }
-        }
-
-        fun format(buttons: List<BarButton>): String = buttons.joinToString(",") { it.name }
-    }
+    MIDDLE_CLICK("Middle", "Middle click"),
 }
 
 data class AppSettings(
     val theme: ThemeMode = ThemeMode.SYSTEM,
-    val bottomBar: List<BarButton> = BarButton.DEFAULT,
+    val bottomBar: List<BarItem> = BarItem.DEFAULT,
+    /** Buttons the user made; each may or may not be on [bottomBar]. */
+    val shortcuts: List<CustomShortcut> = emptyList(),
     val pointerSpeed: Float = 1.0f,
     val acceleration: Float = 0.6f,
     val scrollSpeed: Float = 1.0f,
@@ -90,7 +78,15 @@ data class AppSettings(
     val lockScreenMedia: Boolean = true,
     /** While the PC plays, the phone's volume buttons change the PC's volume. */
     val volumeKeys: Boolean = true,
-)
+) {
+    fun shortcut(id: String): CustomShortcut? = shortcuts.firstOrNull { it.id == id }
+
+    /** The name Settings shows for a button on the bar. */
+    fun titleOf(item: BarItem): String = when (item) {
+        is BarItem.Builtin -> item.button.title
+        is BarItem.Custom -> shortcut(item.id)?.title.orEmpty()
+    }
+}
 
 /** Everything lives in app-private storage, and backups are disabled in the manifest so tokens never leave the phone. */
 class Store(context: Context) {
@@ -154,9 +150,11 @@ class Store(context: Context) {
 
     fun loadSettings(): AppSettings {
         val d = AppSettings()
+        val shortcuts = loadShortcuts()
         return AppSettings(
             theme = prefs.getString("theme", null)?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: d.theme,
-            bottomBar = BarButton.parse(prefs.getString("bottomBar", null)),
+            bottomBar = BarItem.parse(prefs.getString("bottomBar", null), shortcuts.map { it.id }.toSet()),
+            shortcuts = shortcuts,
             pointerSpeed = prefs.getFloat("pointerSpeed", d.pointerSpeed),
             acceleration = prefs.getFloat("acceleration", d.acceleration),
             scrollSpeed = prefs.getFloat("scrollSpeed", d.scrollSpeed),
@@ -179,7 +177,8 @@ class Store(context: Context) {
     fun saveSettings(s: AppSettings) {
         prefs.edit {
             putString("theme", s.theme.name)
-            putString("bottomBar", BarButton.format(s.bottomBar))
+            putString("bottomBar", BarItem.format(s.bottomBar))
+            putString("shortcuts", shortcutsJson(s.shortcuts))
             putFloat("pointerSpeed", s.pointerSpeed)
             putFloat("acceleration", s.acceleration)
             putFloat("scrollSpeed", s.scrollSpeed)
@@ -197,6 +196,48 @@ class Store(context: Context) {
             putBoolean("lockScreenMedia", s.lockScreenMedia)
             putBoolean("volumeKeys", s.volumeKeys)
         }
+    }
+
+    private fun loadShortcuts(): List<CustomShortcut> {
+        val raw = prefs.getString("shortcuts", null) ?: return emptyList()
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { i ->
+                val o = array.getJSONObject(i)
+                val keys = o.getJSONArray("keys").let { k ->
+                    (0 until k.length()).map { j ->
+                        val key = k.getJSONObject(j)
+                        KeyCombo(key.getInt("vk"), key.optInt("mods") and 0xF)
+                    }
+                }
+                CustomShortcut(
+                    id = o.getString("id").takeIf { id -> id.isNotEmpty() && id.all { it.isLetterOrDigit() } } ?: return@mapNotNull null,
+                    name = o.optString("name"),
+                    keys = keys.filter { it.vk in 1..0xFE }.take(CustomShortcut.MAX_KEYS),
+                    icon = o.optString("icon", CustomShortcut.DEFAULT_ICON),
+                    image = o.optString("image").takeIf { ShortcutImages.isValidName(it) },
+                ).takeIf { it.ready }
+            }.distinctBy { it.id }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun shortcutsJson(shortcuts: List<CustomShortcut>): String {
+        val array = JSONArray()
+        shortcuts.forEach { sc ->
+            val keys = JSONArray()
+            sc.keys.forEach { keys.put(JSONObject().put("vk", it.vk).put("mods", it.mods)) }
+            array.put(
+                JSONObject()
+                    .put("id", sc.id)
+                    .put("name", sc.name)
+                    .put("keys", keys)
+                    .put("icon", sc.icon)
+                    .apply { sc.image?.let { put("image", it) } },
+            )
+        }
+        return array.toString()
     }
 
     /**

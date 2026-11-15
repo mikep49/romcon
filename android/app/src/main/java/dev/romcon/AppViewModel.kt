@@ -1,6 +1,7 @@
 package dev.romcon
 
 import android.app.Application
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -8,7 +9,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.romcon.data.AppSettings
+import dev.romcon.data.BarItem
+import dev.romcon.data.CustomShortcut
+import dev.romcon.data.KeyCombo
 import dev.romcon.data.SavedPc
+import dev.romcon.data.ShortcutImages
 import dev.romcon.data.Store
 import dev.romcon.data.Transport
 import dev.romcon.input.Latch
@@ -45,7 +50,12 @@ import kotlin.coroutines.resume
 enum class Screen { HOME, CONTROL, SETTINGS }
 
 /** A page inside Settings; the settings list itself is shown when none is open. */
-enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, BOTTOM_BAR, MEDIA, CONNECTION, GENERAL }
+enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, BOTTOM_BAR, SHORTCUT, MEDIA, CONNECTION, GENERAL }
+
+/** A custom shortcut being made or changed in Settings; [original] is the saved one, or null for a new one. */
+data class ShortcutDraft(val shortcut: CustomShortcut, val original: CustomShortcut?) {
+    val changed: Boolean get() = shortcut != original
+}
 
 sealed interface ConnState {
     data object Idle : ConnState
@@ -81,6 +91,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var screenBeforeSettings = Screen.HOME
 
     var settingsPage by mutableStateOf<SettingsPage?>(null)
+        private set
+
+    /** What the shortcut editor shows while [settingsPage] is [SettingsPage.SHORTCUT]. */
+    var shortcutDraft by mutableStateOf<ShortcutDraft?>(null)
+        private set
+
+    /** Back was pressed in the shortcut editor with unsaved changes. */
+    var confirmDiscard by mutableStateOf(false)
+        private set
+
+    /** Why the picture just chosen for a shortcut couldn't be used. */
+    var shortcutImageError by mutableStateOf<String?>(null)
         private set
 
     private val _pcs = MutableStateFlow(store.loadPcs().sortedByDescending { it.lastUsed })
@@ -128,6 +150,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // A finished update leaves its APK behind, and the new version is running by now.
         viewModelScope.launch(Dispatchers.IO) { Updates.apkFile(app).delete() }
+        deleteUnusedShortcutImages()
         checkForUpdates()
     }
 
@@ -136,6 +159,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun openSettings() {
         if (screen != Screen.SETTINGS) screenBeforeSettings = screen
         settingsPage = null
+        shortcutDraft = null
+        confirmDiscard = false
         screen = Screen.SETTINGS
     }
 
@@ -145,7 +170,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun back() {
         when (screen) {
-            Screen.SETTINGS -> if (settingsPage != null) settingsPage = null else screen = screenBeforeSettings
+            Screen.SETTINGS -> when {
+                settingsPage == SettingsPage.SHORTCUT -> if (shortcutDraft?.changed == true) confirmDiscard = true else closeShortcutEditor()
+                settingsPage != null -> settingsPage = null
+                else -> screen = screenBeforeSettings
+            }
             Screen.CONTROL -> disconnect()
             Screen.HOME -> Unit
         }
@@ -439,6 +468,86 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         session?.let { if (it.preferUdp != udp) it.preferUdp = udp }
     }
 
+    // ---------- Custom shortcuts ----------
+
+    fun newShortcut() {
+        openShortcutEditor(ShortcutDraft(CustomShortcut(CustomShortcut.newId(), name = "", keys = listOf(KeyCombo())), original = null))
+    }
+
+    fun editShortcut(shortcut: CustomShortcut) = openShortcutEditor(ShortcutDraft(shortcut, shortcut))
+
+    private fun openShortcutEditor(draft: ShortcutDraft) {
+        shortcutDraft = draft
+        confirmDiscard = false
+        shortcutImageError = null
+        settingsPage = SettingsPage.SHORTCUT
+    }
+
+    fun editDraft(transform: (CustomShortcut) -> CustomShortcut) {
+        shortcutDraft = shortcutDraft?.let { it.copy(shortcut = transform(it.shortcut)) }
+    }
+
+    /** Saves the shortcut being edited. A new one also goes on the bar when there's room. */
+    fun saveDraft() {
+        val draft = shortcutDraft ?: return
+        if (!draft.shortcut.ready) return
+        val saved = draft.shortcut.copy(name = draft.shortcut.name.trim())
+        updateSettings { s ->
+            if (s.shortcut(saved.id) != null) {
+                s.copy(shortcuts = s.shortcuts.map { if (it.id == saved.id) saved else it })
+            } else {
+                val bar = if (s.bottomBar.size < BarItem.MAX) s.bottomBar + BarItem.Custom(saved.id) else s.bottomBar
+                s.copy(shortcuts = s.shortcuts + saved, bottomBar = bar)
+            }
+        }
+        closeShortcutEditor()
+    }
+
+    fun deleteDraft() {
+        val id = shortcutDraft?.shortcut?.id ?: return
+        updateSettings { s ->
+            // The bar always keeps a button, so taking off its last one brings back the default.
+            val bar = s.bottomBar.filterNot { it == BarItem.Custom(id) }.ifEmpty { BarItem.DEFAULT }
+            s.copy(shortcuts = s.shortcuts.filterNot { it.id == id }, bottomBar = bar)
+        }
+        closeShortcutEditor()
+    }
+
+    fun discardDraft() = closeShortcutEditor()
+
+    fun keepEditing() {
+        confirmDiscard = false
+    }
+
+    private fun closeShortcutEditor() {
+        shortcutDraft = null
+        confirmDiscard = false
+        shortcutImageError = null
+        settingsPage = SettingsPage.BOTTOM_BAR
+        deleteUnusedShortcutImages()
+    }
+
+    /** Copies a picture from the phone in as the icon of the shortcut being edited. */
+    fun importShortcutImage(uri: Uri) {
+        val id = shortcutDraft?.shortcut?.id ?: return
+        shortcutImageError = null
+        viewModelScope.launch {
+            try {
+                val name = withContext(Dispatchers.IO) { ShortcutImages.import(getApplication(), uri, id) }
+                if (shortcutDraft?.shortcut?.id == id) editDraft { it.copy(image = name) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                shortcutImageError = "Couldn't use that picture. Try another one."
+            }
+        }
+    }
+
+    private fun deleteUnusedShortcutImages() {
+        val keep = _settings.value.shortcuts.mapNotNull { it.image }.toSet() + setOfNotNull(shortcutDraft?.shortcut?.image)
+        viewModelScope.launch(Dispatchers.IO) { ShortcutImages.deleteAllExcept(getApplication(), keep) }
+    }
+
     // ---------- Updates ----------
 
     /** Asks GitHub whether there's a newer RomCon. Runs when the app opens, and from Settings. */
@@ -550,6 +659,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val s = session ?: return
         s.key(vk, Proto.KEY_TAP, mods)
         mirror { it.key(vk, mods) }
+    }
+
+    /** Presses a custom shortcut's hotkeys one after the other. Like [shortcut], it ignores and clears one-shot latches. */
+    fun runShortcut(shortcut: CustomShortcut) {
+        takeMods()
+        val s = session ?: return
+        shortcut.keys.forEach { s.key(it.vk, Proto.KEY_TAP, it.mods) }
+        mirror { line -> shortcut.keys.fold(line) { typed, combo -> typed.key(combo.vk, combo.mods) } }
     }
 
     /** Alt+Tab that keeps Alt held between taps, so tapping again moves through the window list. */
