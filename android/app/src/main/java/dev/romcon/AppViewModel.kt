@@ -16,12 +16,14 @@ import dev.romcon.input.ModKey
 import dev.romcon.input.TypedLine
 import dev.romcon.input.Vk
 import dev.romcon.input.letterOrDigitVk
+import dev.romcon.media.MediaLink
 import dev.romcon.net.DiscoveredPc
 import dev.romcon.net.Discovery
 import dev.romcon.net.FailKind
 import dev.romcon.net.Proto
 import dev.romcon.net.RemoteException
 import dev.romcon.net.RemoteSession
+import dev.romcon.net.isPrivateLanIp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,7 +40,7 @@ import kotlin.coroutines.resume
 enum class Screen { HOME, CONTROL, SETTINGS }
 
 /** A page inside Settings; the settings list itself is shown when none is open. */
-enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, BOTTOM_BAR, CONNECTION, GENERAL }
+enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, BOTTOM_BAR, MEDIA, CONNECTION, GENERAL }
 
 sealed interface ConnState {
     data object Idle : ConnState
@@ -172,7 +174,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun forget(pc: SavedPc) {
         _pcs.update { list -> list.filterNot { it.id == pc.id } }
         store.savePcs(_pcs.value)
+        MediaLink.sync(getApplication())
     }
+
+    /** True for a paired PC whose RomCon is too old to offer lock screen media controls. */
+    fun lacksMedia(pc: SavedPc): Boolean = pc.fingerprint in store.pcsWithoutMedia()
 
     fun editAddress(pc: SavedPc, host: String, port: Int) = upsert(pc.copy(host = host.trim(), port = port))
 
@@ -238,6 +244,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 _pcs.update { list -> list.filterNot { it.id != pc.id && it.fingerprint == pc.fingerprint } }
                 upsert(pc)
+                store.setMediaSupport(fingerprint, welcome.media)
+                MediaLink.sync(getApplication())
                 _pairing.value = null
 
                 connectJob?.cancel()
@@ -279,6 +287,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         var attempt = 0
         var lastError: String? = null
         var ready = alreadyOpen
+        var mediaChanged = false
         while (true) {
             val s: RemoteSession
             if (ready != null) {
@@ -292,6 +301,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         val opened = RemoteSession.open(host, port, pc.fingerprint)
                         val welcome = opened.hello(deviceId, deviceName, Proto.AUTH_TOKEN, pc.token)
                         pc = pc.copy(name = welcome.serverName.ifBlank { pc.name }, lastUsed = System.currentTimeMillis())
+                        mediaChanged = store.setMediaSupport(pc.fingerprint, welcome.media)
                         opened
                     }
                 } catch (e: RemoteException) {
@@ -305,6 +315,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     continue
                 }
                 upsert(pc)
+                // The PC was updated (or rolled back) since the phone last asked whether it can show its media.
+                if (mediaChanged) MediaLink.sync(getApplication())
             }
 
             session = s
@@ -382,6 +394,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onForeground() {
+        // Android lets the background media link start while the app is in front, so this is the moment to check on it.
+        MediaLink.sync(getApplication())
         val pc = resumePc ?: return
         resumePc = null
         if (screen == Screen.CONTROL || screen == Screen.SETTINGS) {
@@ -393,8 +407,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Settings ----------
 
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        val before = _settings.value
         _settings.update(transform)
         store.saveSettings(_settings.value)
+        if (before.lockScreenMedia != _settings.value.lockScreenMedia || before.volumeKeys != _settings.value.volumeKeys) {
+            MediaLink.sync(getApplication())
+        }
         if (!_settings.value.typingPreview) typed = TypedLine.EMPTY
         val udp = _settings.value.transport == Transport.UDP
         session?.let { if (it.preferUdp != udp) it.preferUdp = udp }
@@ -514,11 +532,5 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         closeSession()
-    }
-
-    private fun isPrivateLanIp(host: String): Boolean {
-        val parts = host.split('.').mapNotNull { it.toIntOrNull() }
-        if (parts.size != 4) return false
-        return parts[0] == 10 || (parts[0] == 172 && parts[1] in 16..31) || (parts[0] == 192 && parts[1] == 168)
     }
 }

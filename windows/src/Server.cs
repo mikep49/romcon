@@ -24,6 +24,12 @@ namespace RomCon
         public DateTime ConnectedAt;
         readonly object writeLock = new object();
 
+        /// <summary>A media link: the phone only shows this PC's media controls, and can send nothing but media commands.</summary>
+        public bool MediaOnly;
+
+        /// <summary>The artwork this phone already has.</summary>
+        public uint SentArtId;
+
         /// <summary>Set once the phone asks to send pointer movement over UDP.</summary>
         public volatile PointerChannel Pointer;
 
@@ -119,6 +125,8 @@ namespace RomCon
     /// <summary>
     /// Accepts phones over TLS, checks they are paired, and feeds their input to Windows.
     /// A phone may also send pointer movement over UDP on the same port number (see PointerChannel).
+    /// Besides those control connections, a phone can keep a media link open in the background: the PC tells it
+    /// what's playing, and it sends back play, pause, skip and volume from its lock screen.
     /// </summary>
     sealed class RemoteServer
     {
@@ -126,11 +134,17 @@ namespace RomCon
         const int HelloTimeoutMs = 120000; // the phone may still be waiting for the user to type the PIN
         const int IdleTimeoutMs = 20000;   // phones ping every few seconds
         const int UdpSyncWaitMs = 40;      // how long a click or key waits for a datagram sent just before it
+        const int MediaKeepAliveMs = 5 * 60 * 1000; // a sleeping phone doesn't ping, so TCP checks on it now and then
 
         readonly Config config;
         readonly X509Certificate2 certificate;
         readonly InputInjector injector;
+        readonly MediaWatcher media;
         readonly List<ClientSession> sessions = new List<ClientSession>();
+        readonly List<ClientSession> mediaLinks = new List<ClientSession>();
+        readonly HashSet<string> mediaAnnounced = new HashSet<string>();
+        readonly object mediaSend = new object();
+        volatile bool asleep;
         readonly Dictionary<uint, ClientSession> pointerChannels = new Dictionary<uint, ClientSession>();
         TcpListener listener;
         UdpClient discovery;
@@ -147,14 +161,16 @@ namespace RomCon
         public event Action Changed;
         public event Action<ClientSession> Connected;
 
-        public RemoteServer(Config config, X509Certificate2 certificate, InputInjector injector)
+        public RemoteServer(Config config, X509Certificate2 certificate, InputInjector injector, MediaWatcher media)
         {
             this.config = config;
             this.certificate = certificate;
             this.injector = injector;
+            this.media = media;
             Fingerprint = Identity.Fingerprint(certificate);
             VerifyCode = Identity.VerifyCode(Fingerprint);
             Pairing.Changed += () => Changed?.Invoke();
+            media.Changed += PushMedia;
         }
 
         public int Port => config.Port;
@@ -172,13 +188,38 @@ namespace RomCon
                     s.Send(new FrameBuilder(Proto.Status).U8(value ? 1 : 0).Build());
                 }
                 Log.Info(value ? "Remote control paused." : "Remote control resumed.");
+                PushMedia();
                 Changed?.Invoke();
+            }
+        }
+
+        /// <summary>Set while the PC is going to sleep, so phones drop their media controls instead of showing stale ones.</summary>
+        public bool Asleep
+        {
+            get { return asleep; }
+            set
+            {
+                if (asleep == value) return;
+                asleep = value;
+                PushMedia();
+                if (!value) media.Kick();
             }
         }
 
         public List<ClientSession> Sessions
         {
             get { lock (sessions) return sessions.ToList(); }
+        }
+
+        /// <summary>True while the phone has a media link open, ready to show this PC's media controls.</summary>
+        public bool HasMediaLink(string deviceId)
+        {
+            lock (mediaLinks) return mediaLinks.Any(x => x.DeviceId == deviceId);
+        }
+
+        List<ClientSession> MediaLinks
+        {
+            get { lock (mediaLinks) return mediaLinks.ToList(); }
         }
 
         public void Start()
@@ -216,12 +257,12 @@ namespace RomCon
             try { listener?.Stop(); } catch { }
             try { discovery?.Close(); } catch { }
             try { pointerSocket?.Close(); } catch { }
-            foreach (var s in Sessions) s.Close();
+            foreach (var s in Sessions.Concat(MediaLinks)) s.Close();
         }
 
         public void Disconnect(string deviceId)
         {
-            foreach (var s in Sessions.Where(x => x.DeviceId == deviceId)) s.Close();
+            foreach (var s in Sessions.Concat(MediaLinks).Where(x => x.DeviceId == deviceId)) s.Close();
         }
 
         void AcceptLoop()
@@ -270,6 +311,7 @@ namespace RomCon
                     string deviceName = hello.Str();
                     int mode = hello.U8();
                     string secret = hello.Str();
+                    int role = hello.HasMore ? hello.U8() : Proto.RoleControl; // phones from before media links send no role
 
                     string token = "";
                     if (version != Proto.Version)
@@ -317,15 +359,25 @@ namespace RomCon
                         DeviceId = deviceId,
                         DeviceName = deviceName,
                         ConnectedAt = DateTime.Now,
+                        // A phone pairing with a PIN is at the app's pairing screen, about to control the PC.
+                        MediaOnly = role == Proto.RoleMedia && mode == Proto.AuthToken,
                     };
-                    session.Send(new FrameBuilder(Proto.Welcome).Str(config.ServerName).Str(token).Build());
-                    session.Send(new FrameBuilder(Proto.Status).U8(paused ? 1 : 0).Build());
-                    lock (sessions) sessions.Add(session);
-                    Log.Info(deviceName + " connected from " + address + ".");
-                    Connected?.Invoke(session);
+                    session.Send(new FrameBuilder(Proto.Welcome).Str(config.ServerName).Str(token).U8(Proto.FeatureMedia).Build());
+                    if (session.MediaOnly)
+                    {
+                        BeginMediaLink(session);
+                        tcp.ReceiveTimeout = 0; // the phone sleeps between pings
+                    }
+                    else
+                    {
+                        session.Send(new FrameBuilder(Proto.Status).U8(paused ? 1 : 0).Build());
+                        lock (sessions) sessions.Add(session);
+                        Log.Info(deviceName + " connected from " + address + ".");
+                        Connected?.Invoke(session);
+                        tcp.ReceiveTimeout = IdleTimeoutMs;
+                    }
                     Changed?.Invoke();
 
-                    tcp.ReceiveTimeout = IdleTimeoutMs;
                     Frame frame;
                     while ((frame = FrameIO.Read(ssl)) != null)
                     {
@@ -353,7 +405,13 @@ namespace RomCon
             finally
             {
                 tcp.Close();
-                if (session != null)
+                if (session != null && session.MediaOnly)
+                {
+                    lock (mediaLinks) mediaLinks.Remove(session);
+                    media.RemoveWatcher();
+                    Changed?.Invoke();
+                }
+                else if (session != null)
                 {
                     PointerChannel channel = session.Pointer;
                     if (channel != null)
@@ -381,6 +439,16 @@ namespace RomCon
             if (f.Type == Proto.Ping)
             {
                 s.Send(new FrameBuilder(Proto.Pong).Build());
+                return;
+            }
+            if (s.MediaOnly)
+            {
+                // Nothing else is accepted on a media link, so a phone in a pocket can never move the pointer or type.
+                if (f.Type == Proto.MediaCommand && !paused)
+                {
+                    byte command = f.U8();
+                    media.Command(command, unchecked((int)f.U32()));
+                }
                 return;
             }
             if (f.Type == Proto.UdpRequest)
@@ -439,6 +507,68 @@ namespace RomCon
             if (paused) return;
             if (type == Proto.MouseMove) injector.Move(a, b);
             else injector.Wheel(a, b);
+        }
+
+        // ---------- Media links ----------
+
+        /// <summary>What phones should show now: nothing while remote control is paused or the PC is going to sleep.</summary>
+        MediaSnapshot MediaNow => paused || asleep ? MediaSnapshot.None : media.Current;
+
+        void BeginMediaLink(ClientSession s)
+        {
+            media.AddWatcher(); // first, so that whatever happens next, the end of the connection takes it away again
+            List<ClientSession> older;
+            lock (mediaLinks)
+            {
+                older = mediaLinks.Where(x => x.DeviceId == s.DeviceId).ToList();
+                mediaLinks.Add(s);
+            }
+            // A phone keeps one media link. An older one is a connection it has given up on without our hearing of it.
+            foreach (var o in older) o.Close();
+
+            try
+            {
+                var values = new byte[12];
+                BitConverter.GetBytes(1u).CopyTo(values, 0);
+                BitConverter.GetBytes((uint)MediaKeepAliveMs).CopyTo(values, 4);
+                BitConverter.GetBytes(10000u).CopyTo(values, 8);
+                s.Tcp.Client.IOControl(IOControlCode.KeepAliveValues, values, null);
+            }
+            catch (Exception)
+            {
+            }
+
+            bool first;
+            lock (mediaAnnounced) first = mediaAnnounced.Add(s.DeviceId);
+            if (first) Log.Info(s.DeviceName + " is ready to show this PC's media controls.");
+            lock (mediaSend) SendMedia(s, MediaNow);
+        }
+
+        void PushMedia()
+        {
+            // One at a time and always the latest, so a phone never ends up showing an older state than the PC's.
+            lock (mediaSend)
+            {
+                MediaSnapshot now = MediaNow;
+                foreach (var s in MediaLinks) SendMedia(s, now);
+            }
+        }
+
+        void SendMedia(ClientSession s, MediaSnapshot m)
+        {
+            s.Send(new FrameBuilder(Proto.Media)
+                .U8(m.State).U8(m.Can).U8(m.Volume).U8(m.Muted ? 1 : 0)
+                .U32((uint)m.PositionAt(media.NowMs)).U32((uint)m.DurationMs).U16(m.RatePercent)
+                .U32(m.ArtId).Str(m.Title).Str(m.Artist).Build());
+            if (m.ArtId == 0 || m.Art == null || s.SentArtId == m.ArtId) return;
+            s.SentArtId = m.ArtId;
+            int count = (m.Art.Length + Proto.ArtChunk - 1) / Proto.ArtChunk;
+            for (int i = 0; i < count; i++)
+            {
+                int offset = i * Proto.ArtChunk;
+                s.Send(new FrameBuilder(Proto.MediaArt).U32(m.ArtId).U16(i).U16(count)
+                    .Bytes(m.Art, offset, Math.Min(Proto.ArtChunk, m.Art.Length - offset)).Build());
+            }
         }
 
         // ---------- Pointer movement over UDP ----------

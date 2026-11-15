@@ -28,8 +28,13 @@ if (-not (Test-Path $icon)) { & (Join-Path $root 'tools\make-icon.ps1') -Out $ic
 $compiler = Find-Compiler
 New-Item -ItemType Directory -Force $out | Out-Null
 $sources = Get-ChildItem (Join-Path $root 'src') -Filter *.cs | ForEach-Object { $_.FullName }
-$refs = 'mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Drawing.dll', 'System.Windows.Forms.dll', 'System.Security.dll' |
+$refs = 'mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Drawing.dll', 'System.Windows.Forms.dll', 'System.Security.dll', 'System.Runtime.dll' |
     ForEach-Object { "/reference:$(Join-Path $fx $_)" }
+# Windows' own descriptions of its media APIs ("what's playing"), which name their basic types through System.Runtime.
+# They're only read at compile time, and they come with Windows, so no Windows SDK is needed. The price is that the
+# framework's helpers for these APIs (AsTask, AsStream) can't be used: those are compiled against the SDK's one big Windows.winmd.
+$refs += 'Windows.Foundation.winmd', 'Windows.Media.winmd', 'Windows.Storage.winmd' |
+    ForEach-Object { "/reference:$(Join-Path $env:WINDIR "System32\WinMetadata\$_")" }
 
 $cscArgs = $compiler.Args + @(
     '/nologo', '/noconfig', '/nostdlib+', '/target:winexe', '/platform:anycpu', '/optimize+', '/debug-',

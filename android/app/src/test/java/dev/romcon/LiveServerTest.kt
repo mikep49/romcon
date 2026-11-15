@@ -2,15 +2,18 @@ package dev.romcon
 
 import dev.romcon.net.Discovery
 import dev.romcon.net.FailKind
+import dev.romcon.net.MediaState
 import dev.romcon.net.Proto
 import dev.romcon.net.RemoteException
 import dev.romcon.net.RemoteSession
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 /**
@@ -87,6 +90,31 @@ class LiveServerTest {
         Thread.sleep(500)
         assertTrue("connection stayed up over UDP", session.isOpen && closed.count == 1L)
         session.close()
+
+        // A media link: the PC says what's playing straight away, and takes media commands and nothing else.
+        val link = RemoteSession.open(host, port, fingerprint)
+        assertTrue("PC offers media links", link.hello("jvm-test", "JVM test", Proto.AUTH_TOKEN, welcome.token, Proto.ROLE_MEDIA).media)
+        val states = LinkedBlockingQueue<MediaState>()
+        val linkClosed = CountDownLatch(1)
+        link.start(
+            object : RemoteSession.Listener {
+                override fun onStatus(pcPaused: Boolean) = Unit
+                override fun onMedia(media: MediaState) {
+                    states.add(media)
+                }
+                override fun onClosed(error: RemoteException) = linkClosed.countDown()
+            },
+            relaxed = true,
+        )
+        assertNotNull("PC said what's playing", states.poll(3, TimeUnit.SECONDS))
+        link.mediaCommand(Proto.MEDIA_ADJUST_VOLUME, -2) // negative, to check the sign survives; dry-run logs "volume -2"
+        link.move(40, 40) // ignored: the PC's log must show no movement after the volume command
+        val before = link.lastHeard
+        link.ping()
+        Thread.sleep(500)
+        assertTrue("PC answered a ping on the media link", link.lastHeard > before)
+        assertTrue("media link stayed up", link.isOpen && linkClosed.count == 1L)
+        link.close()
 
         // A different pinned certificate is refused before anything is sent.
         try {

@@ -9,6 +9,13 @@ import java.net.SocketTimeoutException
 
 data class DiscoveredPc(val name: String, val host: String, val port: Int, val fingerprint: String)
 
+/** True for an IPv4 address in a home or office range, which only means something on that network. */
+fun isPrivateLanIp(host: String): Boolean {
+    val parts = host.split('.').mapNotNull { it.toIntOrNull() }
+    if (parts.size != 4) return false
+    return parts[0] == 10 || (parts[0] == 172 && parts[1] in 16..31) || (parts[0] == 192 && parts[1] == 168)
+}
+
 /** Finds RomCon PCs on the local network with a UDP broadcast. Tailscale doesn't carry broadcasts; add those PCs by address. */
 object Discovery {
 

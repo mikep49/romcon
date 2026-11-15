@@ -1,5 +1,12 @@
 package dev.romcon.ui
 
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.SystemClock
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,6 +32,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
@@ -42,12 +50,18 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.romcon.AppViewModel
 import dev.romcon.ConnState
@@ -56,6 +70,8 @@ import dev.romcon.data.AppSettings
 import dev.romcon.data.BarButton
 import dev.romcon.data.ThemeMode
 import dev.romcon.data.Transport
+import dev.romcon.media.LinkStatus
+import dev.romcon.media.MediaLink
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,6 +104,7 @@ fun SettingsScreen(vm: AppViewModel) {
                     SettingsPage.MOUSE -> MouseSettings(vm, s)
                     SettingsPage.KEYBOARD -> KeyboardSettings(vm, s)
                     SettingsPage.BOTTOM_BAR -> BottomBarSettings(vm, s)
+                    SettingsPage.MEDIA -> MediaSettings(vm, s)
                     SettingsPage.CONNECTION -> ConnectionSettings(vm, s)
                     SettingsPage.GENERAL -> GeneralSettings(vm, s)
                 }
@@ -103,6 +120,7 @@ private val SettingsPage.title: String
         SettingsPage.MOUSE -> "Mouse"
         SettingsPage.KEYBOARD -> "Keyboard"
         SettingsPage.BOTTOM_BAR -> "Bottom bar"
+        SettingsPage.MEDIA -> "Media controls"
         SettingsPage.CONNECTION -> "Connection"
         SettingsPage.GENERAL -> "General"
     }
@@ -124,6 +142,11 @@ private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
     PageLink(Icons.Filled.Mouse, "Mouse", "Pointer speed, scrolling, tap to click") { vm.openSettingsPage(SettingsPage.MOUSE) }
     PageLink(Icons.Filled.Keyboard, "Keyboard", "Modifier keys and typing") { vm.openSettingsPage(SettingsPage.KEYBOARD) }
     PageLink(Icons.Filled.TouchApp, "Bottom bar", s.bottomBar.joinToString(", ") { it.title }) { vm.openSettingsPage(SettingsPage.BOTTOM_BAR) }
+    PageLink(
+        Icons.Filled.PlayCircle,
+        "Media controls",
+        if (s.lockScreenMedia) "On the lock screen while the PC is playing" else "Off",
+    ) { vm.openSettingsPage(SettingsPage.MEDIA) }
     PageLink(Icons.Filled.SwapVert, "Connection", "Pointer movement over ${s.transport.name}") { vm.openSettingsPage(SettingsPage.CONNECTION) }
     PageLink(Icons.Filled.Tune, "General", "Vibration, keep screen on") { vm.openSettingsPage(SettingsPage.GENERAL) }
 
@@ -281,6 +304,98 @@ private fun BarButtonRow(button: BarButton, controls: @Composable () -> Unit) {
         }
         controls()
     }
+}
+
+@Composable
+private fun MediaSettings(vm: AppViewModel, s: AppSettings) {
+    val status by MediaLink.state.collectAsStateWithLifecycle()
+    val pcs by vm.pcs.collectAsStateWithLifecycle()
+
+    Section("Lock screen")
+    SwitchSetting(
+        "Show the PC's media controls",
+        "While a paired PC is playing something: play and pause, skip, and the PC's volume, without unlocking the phone",
+        s.lockScreenMedia,
+    ) { v -> vm.updateSettings { it.copy(lockScreenMedia = v) } }
+    if (!s.lockScreenMedia) return
+
+    SwitchSetting(
+        "Volume buttons change the PC's volume",
+        "While the PC is playing. When it's paused, they go back to the phone's own volume.",
+        s.volumeKeys,
+    ) { v -> vm.updateSettings { it.copy(volumeKeys = v) } }
+
+    Section("Status")
+    val outdated = pcs.filter(vm::lacksMedia)
+    val linked = status as? LinkStatus.Connected
+    Help(
+        when {
+            pcs.isEmpty() -> "Pair a PC first."
+            linked != null && linked.showing -> "${linked.pcName} is playing. The controls are on the lock screen and with your notifications."
+            linked != null -> "Connected to ${linked.pcName}. The controls appear when it plays something and go away when it stops."
+            outdated.size == pcs.size -> "Nothing to connect to yet."
+            else -> "Looking for your PC. The controls appear once it's on, in reach and playing something."
+        },
+    )
+    if (outdated.isNotEmpty()) {
+        Help("RomCon on ${outdated.joinToString(", ") { it.name }} is too old for this. Update it there, then connect to it once from this app.")
+    }
+
+    Section("In the background")
+    Help(
+        "RomCon stays connected to the PC to know what it's playing. That costs very little battery: " +
+            "nothing is sent while nothing changes, and the phone can sleep.",
+    )
+    BackgroundNotificationNote()
+}
+
+/** The name of a permission that exists from Android 13; older versions never get asked for it. */
+private const val POST_NOTIFICATIONS = "android.permission.POST_NOTIFICATIONS"
+
+/**
+ * Android makes an app that stays connected in the background show a notification. From Android 13 an app's
+ * notifications start switched off, which hides that one; media controls show either way.
+ */
+@Composable
+private fun BackgroundNotificationNote() {
+    val context = LocalContext.current
+    fun allowedNow() = Build.VERSION.SDK_INT < 33 ||
+        ContextCompat.checkSelfPermission(context, POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    var allowed by remember { mutableStateOf(allowedNow()) }
+    // The user may come back from Android's settings having changed it.
+    LifecycleResumeEffect(Unit) {
+        allowed = allowedNow()
+        onPauseOrDispose { }
+    }
+    var askedAt by remember { mutableLongStateOf(0L) }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        allowed = granted
+        // Android stops asking after two refusals and answers "no" at once. Its settings page still works.
+        if (!granted && SystemClock.elapsedRealtime() - askedAt < 400) {
+            context.startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+    if (allowed) {
+        Help(
+            "Android shows a silent notification while an app does this. It never appears on the lock screen. " +
+                "To hide it altogether, long-press it and turn it off; the media controls keep working.",
+        )
+        return
+    }
+    Help(
+        "Android would show a silent notification for this, but notifications are off for RomCon, so it's hidden. " +
+            "Media controls show regardless. If yours don't appear, allow notifications.",
+    )
+    TextButton(
+        onClick = {
+            askedAt = SystemClock.elapsedRealtime()
+            ask.launch(POST_NOTIFICATIONS)
+        },
+    ) { Text("Allow notifications") }
 }
 
 @Composable

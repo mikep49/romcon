@@ -37,7 +37,7 @@ namespace RomCon
             Log.Info("RomCon starting" + (options.DryRun ? " in dry-run mode (input is logged, not sent)" : "") + (IsElevated ? " as administrator" : "") + ".");
 
             var certificate = Identity.LoadOrCreate(config.Dir);
-            server = new RemoteServer(config, certificate, new InputInjector(options.DryRun));
+            server = new RemoteServer(config, certificate, new InputInjector(options.DryRun), new MediaWatcher(options.DryRun));
 
             Icon appIcon = LoadAppIcon(SystemInformation.SmallIconSize);
             iconIdle = appIcon;
@@ -66,6 +66,7 @@ namespace RomCon
                 if (config.NotifyOnConnect) OnUi(() => tray.ShowBalloonTip(3000, "RomCon", session.DeviceName + " connected", ToolTipIcon.Info));
             };
             showWait = ThreadPool.RegisterWaitForSingleObject(showEvent, (s, timedOut) => OnUi(ShowWindow), null, Timeout.Infinite, false);
+            SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
             server.Start();
             if (server.StartError != null)
@@ -144,6 +145,13 @@ namespace RomCon
             ExitThread();
         }
 
+        /// <summary>A sleeping PC plays nothing, and can't say so later, so phones are told on the way down.</summary>
+        void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == PowerModes.Suspend) server.Asleep = true;
+            else if (e.Mode == PowerModes.Resume) server.Asleep = false;
+        }
+
         void RefreshTray()
         {
             int count = server.Sessions.Count;
@@ -192,6 +200,7 @@ namespace RomCon
         {
             if (disposing)
             {
+                SystemEvents.PowerModeChanged -= OnPowerModeChanged; // a static event
                 showWait?.Unregister(null);
                 tray?.Dispose();
                 form?.Dispose();
