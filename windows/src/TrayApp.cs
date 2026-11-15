@@ -24,7 +24,10 @@ namespace RomCon
         readonly Icon iconIdle, iconConnected, iconPaused;
         readonly ToolStripMenuItem pauseItem;
         readonly RegisteredWaitHandle showWait;
-        bool exiting;
+        readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer { Interval = 10000 };
+        bool exiting, updateBalloon, updateAnnounced;
+
+        public readonly Updater Updater = new Updater();
 
         public TrayApp(Options options, Config config, EventWaitHandle showEvent)
         {
@@ -46,7 +49,7 @@ namespace RomCon
             iconConnected = WithBadge(appIcon, Color.FromArgb(34, 197, 94));
             iconPaused = WithBadge(appIcon, Color.FromArgb(234, 179, 8));
 
-            form = new MainForm(this, server, config, LoadAppIcon(new Size(32, 32)));
+            form = new MainForm(this, server, config, Updater, LoadAppIcon(new Size(32, 32)));
             form.CreateControl();
             _ = form.Handle; // so background threads can marshal onto the UI thread before the window is ever shown
 
@@ -64,12 +67,20 @@ namespace RomCon
             if (IsElevated) Native.ChangeWindowMessageFilter(Native.RegisterWindowMessage("TaskbarCreated"), Native.MSGFLT_ADD);
             tray = new NotifyIcon { Icon = iconIdle, Text = "RomCon", ContextMenuStrip = menu, Visible = true };
             tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
+            tray.BalloonTipClicked += (s, e) =>
+            {
+                if (!updateBalloon) return;
+                ShowWindow();
+                form.ShowSettings();
+            };
+            tray.BalloonTipClosed += (s, e) => updateBalloon = false;
 
             server.Changed += () => OnUi(RefreshTray);
             server.Connected += session =>
             {
-                if (config.NotifyOnConnect) OnUi(() => tray.ShowBalloonTip(3000, "RomCon", session.DeviceName + " connected", ToolTipIcon.Info));
+                if (config.NotifyOnConnect) OnUi(() => ShowBalloon(session.DeviceName + " connected", false));
             };
+            Updater.Changed += () => OnUi(AnnounceUpdate);
             showWait = ThreadPool.RegisterWaitForSingleObject(showEvent, (s, timedOut) => OnUi(ShowWindow), null, Timeout.Infinite, false);
             SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
@@ -85,6 +96,15 @@ namespace RomCon
             if (firstRun) StartPairing();
             if (!options.Minimized || firstRun) ShowWindow();
             RefreshTray();
+
+            // Look for a newer RomCon once it has settled in, which also gives the network time to come up after signing in.
+            Updater.CleanUpInBackground();
+            updateTimer.Tick += (s, e) =>
+            {
+                updateTimer.Stop();
+                Updater.Check(true);
+            };
+            updateTimer.Start();
         }
 
         public static bool IsElevated
@@ -150,6 +170,56 @@ namespace RomCon
             ExitThread();
         }
 
+        /// <summary>Downloads the new version, then restarts into it.</summary>
+        public void InstallUpdate()
+        {
+            Updater.Install(
+                () => OnUi(RestartIntoUpdate),
+                reason => OnUi(() =>
+                {
+                    var answer = MessageBox.Show(form, "RomCon couldn't update itself.\n\n" + reason + "\n\nDownload the new version from GitHub instead?", "RomCon",
+                                                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (answer == DialogResult.Yes) OpenReleasePage();
+                }));
+        }
+
+        public void OpenReleasePage()
+        {
+            string url = Updater.Status.Latest?.PageUrl ?? Updater.ReleasesPage;
+            try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+            catch (Exception ex) { Log.Info("Couldn't open " + url + ": " + ex.Message); }
+        }
+
+        void RestartIntoUpdate()
+        {
+            try
+            {
+                // The new RomCon waits for this one to let go before it takes over, and comes back with the window open if it was.
+                Process.Start(new ProcessStartInfo(Application.ExecutablePath, options.RestartArgs(!form.Visible)) { UseShellExecute = false });
+            }
+            catch (Exception ex)
+            {
+                Log.Info("Couldn't start the new version: " + ex.Message);
+                MessageBox.Show(form, "RomCon was updated, but couldn't restart: " + ex.Message + "\n\nOpen RomCon again to use the new version.", "RomCon");
+            }
+            Exit();
+        }
+
+        /// <summary>Tells the user once when the check at startup finds a newer version.</summary>
+        void AnnounceUpdate()
+        {
+            var status = Updater.Status;
+            if (updateAnnounced || !status.Automatic || status.Stage != UpdateStage.Available) return;
+            updateAnnounced = true;
+            ShowBalloon("RomCon " + status.Latest.Version + " is available. Click here to update.", true);
+        }
+
+        void ShowBalloon(string text, bool aboutUpdate)
+        {
+            updateBalloon = aboutUpdate;
+            tray.ShowBalloonTip(aboutUpdate ? 10000 : 3000, "RomCon", text, ToolTipIcon.Info);
+        }
+
         /// <summary>A sleeping PC plays nothing, and can't say so later, so phones are told on the way down.</summary>
         void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
         {
@@ -207,6 +277,7 @@ namespace RomCon
             {
                 SystemEvents.PowerModeChanged -= OnPowerModeChanged; // a static event
                 showWait?.Unregister(null);
+                updateTimer.Dispose();
                 tray?.Dispose();
                 form?.Dispose();
             }

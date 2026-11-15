@@ -24,6 +24,11 @@ import dev.romcon.net.Proto
 import dev.romcon.net.RemoteException
 import dev.romcon.net.RemoteSession
 import dev.romcon.net.isPrivateLanIp
+import dev.romcon.update.UpdateStage
+import dev.romcon.update.UpdateStatus
+import dev.romcon.update.Updates
+import dev.romcon.update.isNewer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -103,12 +108,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var typed by mutableStateOf(TypedLine.EMPTY)
         private set
 
+    /** This app's version, as in the release tags. */
+    val appVersion: String = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "0"
+
+    private val _update = MutableStateFlow(UpdateStatus())
+    val update: StateFlow<UpdateStatus> = _update.asStateFlow()
+
+    /** The user put off the update offered on the home screen; Settings still offers it. */
+    var updateBannerDismissed by mutableStateOf(false)
+        private set
+
     @Volatile private var session: RemoteSession? = null
     private var connectJob: Job? = null
     private var pairJob: Job? = null
     private var altTabJob: Job? = null
     private var altHeld = false
     private var resumePc: SavedPc? = null
+
+    init {
+        // A finished update leaves its APK behind, and the new version is running by now.
+        viewModelScope.launch(Dispatchers.IO) { Updates.apkFile(app).delete() }
+        checkForUpdates()
+    }
 
     // ---------- Navigation ----------
 
@@ -416,6 +437,53 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (!_settings.value.typingPreview) typed = TypedLine.EMPTY
         val udp = _settings.value.transport == Transport.UDP
         session?.let { if (it.preferUdp != udp) it.preferUdp = udp }
+    }
+
+    // ---------- Updates ----------
+
+    /** Asks GitHub whether there's a newer RomCon. Runs when the app opens, and from Settings. */
+    fun checkForUpdates() {
+        val before = _update.value
+        if (before.busy) return
+        _update.value = before.copy(stage = UpdateStage.CHECKING, error = null)
+        viewModelScope.launch {
+            _update.value = try {
+                val release = withContext(Dispatchers.IO) { Updates.fetchLatest(appVersion) }
+                val newer = isNewer(release.version, appVersion)
+                UpdateStatus(if (newer) UpdateStage.AVAILABLE else UpdateStage.UP_TO_DATE, release, newer)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                before.copy(stage = UpdateStage.FAILED, error = "Couldn't check for updates. ${Updates.describe(e)}")
+            }
+        }
+    }
+
+    /** Downloads the new APK and opens Android's installer on it. */
+    fun installUpdate() {
+        val before = _update.value
+        val release = before.latest ?: return
+        if (!before.hasUpdate || before.busy) return
+        _update.value = before.copy(stage = UpdateStage.DOWNLOADING, progress = null, error = null)
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val apk = Updates.apkFile(app)
+            try {
+                withContext(Dispatchers.IO) {
+                    Updates.download(release, appVersion, apk) { p -> _update.update { it.copy(progress = p) } }
+                }
+                _update.value = before.copy(stage = UpdateStage.AVAILABLE, error = null)
+                app.startActivity(Updates.installIntent(app, apk))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _update.value = before.copy(stage = UpdateStage.FAILED, error = "Couldn't update. ${Updates.describe(e)}")
+            }
+        }
+    }
+
+    fun dismissUpdateBanner() {
+        updateBannerDismissed = true
     }
 
     // ---------- Input ----------
