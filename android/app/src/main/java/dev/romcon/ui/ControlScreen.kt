@@ -145,7 +145,7 @@ fun ControlScreen(vm: AppViewModel) {
             .background(MaterialTheme.colorScheme.surface)
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
-        ControlTopBar(conn, vm, onSendText = { textDialog = true })
+        ControlTopBar(conn, vm, lockButton = settings.lockButton, onSendText = { textDialog = true })
 
         Box(
             Modifier
@@ -221,7 +221,7 @@ fun ControlScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun ControlTopBar(conn: ConnState, vm: AppViewModel, onSendText: () -> Unit) {
+private fun ControlTopBar(conn: ConnState, vm: AppViewModel, lockButton: Boolean, onSendText: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val (name, status, color) = when (conn) {
         is ConnState.Connected -> Triple(
@@ -247,8 +247,10 @@ private fun ControlTopBar(conn: ConnState, vm: AppViewModel, onSendText: () -> U
                 Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        IconButton(onClick = { vm.lockPc() }, enabled = conn is ConnState.Connected) {
-            Icon(Icons.Filled.Lock, contentDescription = "Lock the PC")
+        if (lockButton) {
+            IconButton(onClick = { vm.lockPc() }, enabled = conn is ConnState.Connected) {
+                Icon(Icons.Filled.Lock, contentDescription = "Lock the PC")
+            }
         }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }

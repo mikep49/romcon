@@ -30,28 +30,28 @@ enum class Transport { TCP, UDP }
 
 /**
  * A button that can sit on the bar under the trackpad. The names are saved in preferences, so don't rename them.
- * [label] is the short text under the icon; [title] and [summary] describe it in Settings.
+ * [label] is the short text under the icon; [title] names it in Settings, and [summary] says what's in it when the name doesn't.
  */
-enum class BarButton(val label: String, val title: String, val summary: String) {
-    KEYBOARD("Keyboard", "Keyboard", "Show or hide the phone keyboard to type on the PC"),
-    WINDOWS("Windows", "Windows key", "Open the Start menu"),
-    SHORTCUTS("Shortcuts", "Shortcuts", "Copy, paste, switch app and other shortcuts"),
-    KEYS("Keys", "Keys", "Esc, Tab, arrows, F1–F12 and media keys"),
-    SEND_TEXT("Send text", "Send text", "Write on the phone, then send it in one go"),
-    SWITCH_APP("Switch app", "Switch app", "Alt+Tab; tap again to move through the windows"),
-    TASK_VIEW("Task view", "Task view", "Win+Tab: every open window"),
+enum class BarButton(val label: String, val title: String, val summary: String? = null) {
+    KEYBOARD("Keyboard", "Keyboard"),
+    WINDOWS("Windows", "Windows key"),
+    SHORTCUTS("Shortcuts", "Shortcuts", "Copy, paste, undo and more"),
+    KEYS("Keys", "Keys", "Esc, Tab, arrows, F1–F12"),
+    SEND_TEXT("Send text", "Send text", "Write on the phone, send it in one go"),
+    SWITCH_APP("Switch app", "Switch app", "Alt+Tab"),
+    TASK_VIEW("Task view", "Task view", "Win+Tab"),
     DESKTOP("Desktop", "Show desktop", "Win+D"),
-    ESC("Esc", "Esc", "The Escape key"),
-    ENTER("Enter", "Enter", "The Enter key"),
-    COPY("Copy", "Copy", "Ctrl+C"),
-    PASTE("Paste", "Paste", "Ctrl+V"),
-    PLAY_PAUSE("Play", "Play / pause", "The media play/pause key"),
-    VOLUME_DOWN("Vol −", "Volume down", "Hold to keep turning it down"),
-    VOLUME_UP("Vol +", "Volume up", "Hold to keep turning it up"),
-    MUTE("Mute", "Mute", "Mute or unmute the PC"),
-    LEFT_CLICK("Left", "Left click", "Hold it and move on the trackpad to drag"),
-    RIGHT_CLICK("Right", "Right click", "The right mouse button"),
-    MIDDLE_CLICK("Middle", "Middle click", "The middle mouse button");
+    ESC("Esc", "Esc"),
+    ENTER("Enter", "Enter"),
+    COPY("Copy", "Copy"),
+    PASTE("Paste", "Paste"),
+    PLAY_PAUSE("Play", "Play / pause"),
+    VOLUME_DOWN("Vol −", "Volume down"),
+    VOLUME_UP("Vol +", "Volume up"),
+    MUTE("Mute", "Mute"),
+    LEFT_CLICK("Left", "Left click", "Hold it to drag"),
+    RIGHT_CLICK("Right", "Right click"),
+    MIDDLE_CLICK("Middle", "Middle click");
 
     companion object {
         const val MAX_ON_BAR = 5
@@ -83,6 +83,8 @@ data class AppSettings(
     val typingPreview: Boolean = true,
     val haptics: Boolean = true,
     val keepScreenOn: Boolean = true,
+    /** A lock button on the control screen. Off by default: a locked PC can only be unlocked at the PC. */
+    val lockButton: Boolean = false,
     val transport: Transport = Transport.TCP,
     /** Show media controls on the lock screen while a paired PC plays something. */
     val lockScreenMedia: Boolean = true,
@@ -167,6 +169,7 @@ class Store(context: Context) {
             typingPreview = prefs.getBoolean("typingPreview", d.typingPreview),
             haptics = prefs.getBoolean("haptics", d.haptics),
             keepScreenOn = prefs.getBoolean("keepScreenOn", d.keepScreenOn),
+            lockButton = prefs.getBoolean("lockButton", d.lockButton),
             transport = prefs.getString("transport", null)?.let { name -> Transport.entries.firstOrNull { it.name == name } } ?: d.transport,
             lockScreenMedia = prefs.getBoolean("lockScreenMedia", d.lockScreenMedia),
             volumeKeys = prefs.getBoolean("volumeKeys", d.volumeKeys),
@@ -189,6 +192,7 @@ class Store(context: Context) {
             putBoolean("typingPreview", s.typingPreview)
             putBoolean("haptics", s.haptics)
             putBoolean("keepScreenOn", s.keepScreenOn)
+            putBoolean("lockButton", s.lockButton)
             putString("transport", s.transport.name)
             putBoolean("lockScreenMedia", s.lockScreenMedia)
             putBoolean("volumeKeys", s.volumeKeys)
