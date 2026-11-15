@@ -81,6 +81,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.romcon.AppViewModel
 import dev.romcon.ConnState
 import dev.romcon.data.BarButton
+import dev.romcon.data.CustomShortcut
 import dev.romcon.input.Latch
 import dev.romcon.input.ModKey
 import dev.romcon.input.Vk
@@ -162,14 +163,15 @@ fun ControlScreen(vm: AppViewModel) {
         }
 
         AnimatedVisibility(visible = keysOpen, enter = expandVertically(), exit = shrinkVertically()) {
-            KeysPanel(vm, haptic, keysTab, { keysTab = it }, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
+            KeysPanel(vm, settings.shortcuts, haptic, keysTab, { keysTab = it }, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
         }
 
         // Shortcuts and Keys open the same panel on different tabs; each is lit while its side of the panel shows.
         val onShortcuts = keysOpen && keysTab == SHORTCUTS_TAB
         val onKeys = keysOpen && keysTab != SHORTCUTS_TAB
         BottomBar(
-            buttons = settings.bottomBar,
+            items = settings.bottomBar,
+            shortcuts = settings.shortcuts,
             selected = { button ->
                 when (button) {
                     BarButton.KEYBOARD -> imeVisible
@@ -199,6 +201,10 @@ fun ControlScreen(vm: AppViewModel) {
                         vm.press(button)
                     }
                 }
+            },
+            onShortcut = { shortcut ->
+                haptic(false)
+                vm.runShortcut(shortcut)
             },
             onMouse = { button, down ->
                 if (down) haptic(false)
@@ -371,7 +377,14 @@ private fun AppViewModel.press(button: BarButton) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun KeysPanel(vm: AppViewModel, haptic: (Boolean) -> Unit, tab: Int, onTab: (Int) -> Unit, modifier: Modifier) {
+private fun KeysPanel(
+    vm: AppViewModel,
+    custom: List<CustomShortcut>,
+    haptic: (Boolean) -> Unit,
+    tab: Int,
+    onTab: (Int) -> Unit,
+    modifier: Modifier,
+) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModKey.entries.forEach { mod ->
@@ -467,8 +480,10 @@ private fun KeysPanel(vm: AppViewModel, haptic: (Boolean) -> Unit, tab: Int, onT
                     }
                 }
                 else -> {
+                    // The user's own shortcuts come first, so ones that don't fit on the bar are still close at hand.
                     val all: List<Pair<String, () -> Unit>> =
-                        listOf<Pair<String, () -> Unit>>("Switch app" to { haptic(false); vm.switchApp() }) +
+                        custom.map<CustomShortcut, Pair<String, () -> Unit>> { sc -> sc.title to { haptic(false); vm.runShortcut(sc) } } +
+                            listOf<Pair<String, () -> Unit>>("Switch app" to { haptic(false); vm.switchApp() }) +
                             shortcuts.map { sc -> sc.label to { haptic(false); vm.shortcut(sc.vk, sc.mods) } }
                     all.chunked(4).forEach { row ->
                         KeyRow { m ->
@@ -495,7 +510,7 @@ private fun KeyCap(label: String, modifier: Modifier, repeat: Boolean = false, d
     val idle = MaterialTheme.colorScheme.surfaceContainerHighest
     val text: @Composable () -> Unit = {
         Box(Modifier.padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Clip)
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
     if (!repeat) {

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -72,6 +73,7 @@ import dev.romcon.ConnState
 import dev.romcon.SettingsPage
 import dev.romcon.data.AppSettings
 import dev.romcon.data.BarButton
+import dev.romcon.data.BarItem
 import dev.romcon.data.ThemeMode
 import dev.romcon.data.Transport
 import dev.romcon.media.LinkStatus
@@ -88,7 +90,7 @@ fun SettingsScreen(vm: AppViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(page?.title ?: "Settings") },
+                title = { Text(if (page == SettingsPage.SHORTCUT) vm.shortcutEditorTitle else page?.title ?: "Settings") },
                 navigationIcon = { IconButton(onClick = vm::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
             )
         },
@@ -109,6 +111,7 @@ fun SettingsScreen(vm: AppViewModel) {
                     SettingsPage.MOUSE -> MouseSettings(vm, s)
                     SettingsPage.KEYBOARD -> KeyboardSettings(vm, s)
                     SettingsPage.BOTTOM_BAR -> BottomBarSettings(vm, s)
+                    SettingsPage.SHORTCUT -> ShortcutEditor(vm, s)
                     SettingsPage.MEDIA -> MediaSettings(vm, s)
                     SettingsPage.CONNECTION -> ConnectionSettings(vm, s)
                     SettingsPage.GENERAL -> GeneralSettings(vm, s)
@@ -125,6 +128,7 @@ private val SettingsPage.title: String
         SettingsPage.MOUSE -> "Mouse"
         SettingsPage.KEYBOARD -> "Keyboard"
         SettingsPage.BOTTOM_BAR -> "Bottom bar"
+        SettingsPage.SHORTCUT -> "Shortcut"
         SettingsPage.MEDIA -> "Media controls"
         SettingsPage.CONNECTION -> "Connection"
         SettingsPage.GENERAL -> "General"
@@ -143,7 +147,7 @@ private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
     PageLink(Icons.Filled.Palette, "Appearance", "Theme: ${s.theme.label}") { vm.openSettingsPage(SettingsPage.APPEARANCE) }
     PageLink(Icons.Filled.Mouse, "Mouse", "Pointer speed, scrolling, tap to click") { vm.openSettingsPage(SettingsPage.MOUSE) }
     PageLink(Icons.Filled.Keyboard, "Keyboard", "Modifier keys and typing") { vm.openSettingsPage(SettingsPage.KEYBOARD) }
-    PageLink(Icons.Filled.TouchApp, "Bottom bar", s.bottomBar.joinToString(", ") { it.title }) { vm.openSettingsPage(SettingsPage.BOTTOM_BAR) }
+    PageLink(Icons.Filled.TouchApp, "Bottom bar", s.bottomBar.joinToString(", ") { s.titleOf(it) }) { vm.openSettingsPage(SettingsPage.BOTTOM_BAR) }
     PageLink(
         Icons.Filled.PlayCircle,
         "Media controls",
@@ -214,7 +218,7 @@ private fun MouseSettings(vm: AppViewModel, s: AppSettings) {
     SliderSetting("Pointer speed", s.pointerSpeed, 0.3f..3f, "%.1f×") { v -> vm.updateSettings { it.copy(pointerSpeed = v) } }
     SliderSetting("Acceleration", s.acceleration, 0f..1.5f, "%.1f") { v -> vm.updateSettings { it.copy(acceleration = v) } }
     SwitchSetting("Tap to click", null, s.tapToClick) { v -> vm.updateSettings { it.copy(tapToClick = v) } }
-    if (!s.tapToClick && BarButton.LEFT_CLICK !in s.bottomBar) {
+    if (!s.tapToClick && BarItem.Builtin(BarButton.LEFT_CLICK) !in s.bottomBar) {
         Help("To click, add Left click to the bottom bar.")
     }
 
@@ -257,43 +261,67 @@ private fun KeyboardSettings(vm: AppViewModel, s: AppSettings) {
 @Composable
 private fun BottomBarSettings(vm: AppViewModel, s: AppSettings) {
     val bar = s.bottomBar
-    val setBar: (List<BarButton>) -> Unit = { buttons -> vm.updateSettings { it.copy(bottomBar = buttons) } }
-    val full = bar.size >= BarButton.MAX_ON_BAR
+    val setBar: (List<BarItem>) -> Unit = { items -> vm.updateSettings { it.copy(bottomBar = items) } }
+    val full = bar.size >= BarItem.MAX
 
-    Help("Up to ${BarButton.MAX_ON_BAR} buttons fit under the trackpad.")
+    Help("Up to ${BarItem.MAX} buttons fit under the trackpad.")
 
     Section("On the bar")
-    bar.forEachIndexed { i, button ->
+    bar.forEachIndexed { i, item ->
+        val title = s.titleOf(item)
         // Keyed, so the row keeps its identity (and its focus) as it moves up or down.
-        key(button) {
-            BarButtonRow(button) {
+        key(item) {
+            BarItemRow(s, item, onClick = (item as? BarItem.Custom)?.let { c -> s.shortcut(c.id)?.let { sc -> { vm.editShortcut(sc) } } }) {
                 IconButton(onClick = { setBar(bar.swapped(i, i - 1)) }, enabled = i > 0) {
-                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move ${button.title} left")
+                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move $title left")
                 }
                 IconButton(onClick = { setBar(bar.swapped(i, i + 1)) }, enabled = i < bar.lastIndex) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move ${button.title} right")
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move $title right")
                 }
                 // The bar always keeps one button, so there's never an empty strip.
-                IconButton(onClick = { setBar(bar - button) }, enabled = bar.size > 1) {
-                    Icon(Icons.Filled.Close, contentDescription = "Remove ${button.title}")
+                IconButton(onClick = { setBar(bar - item) }, enabled = bar.size > 1) {
+                    Icon(Icons.Filled.Close, contentDescription = "Remove $title")
                 }
             }
         }
+    }
+
+    Section("Your shortcuts")
+    Help("Buttons that press the keys you choose on the PC, like Alt+Space to open a launcher.")
+    s.shortcuts.forEach { sc ->
+        val item = BarItem.Custom(sc.id)
+        key(item) {
+            BarItemRow(s, item, onClick = { vm.editShortcut(sc) }) {
+                IconButton(onClick = { vm.editShortcut(sc) }) {
+                    Icon(Icons.Filled.Edit, contentDescription = "Edit ${sc.title}")
+                }
+                if (item !in bar) {
+                    IconButton(onClick = { setBar(bar + item) }, enabled = !full) {
+                        Icon(Icons.Filled.Add, contentDescription = "Add ${sc.title} to the bar")
+                    }
+                }
+            }
+        }
+    }
+    TextButton(onClick = vm::newShortcut) {
+        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("New shortcut")
     }
 
     Section("More buttons")
     if (full) Help("The bar is full.")
-    BarButton.entries.filterNot { it in bar }.forEach { button ->
-        key(button) {
-            BarButtonRow(button) {
-                IconButton(onClick = { setBar(bar + button) }, enabled = !full) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add ${button.title}")
+    BarButton.entries.map(BarItem::Builtin).filterNot { it in bar }.forEach { item ->
+        key(item) {
+            BarItemRow(s, item) {
+                IconButton(onClick = { setBar(bar + item) }, enabled = !full) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add ${item.button.title}")
                 }
             }
         }
     }
 
-    TextButton(onClick = { setBar(BarButton.DEFAULT) }, enabled = bar != BarButton.DEFAULT, modifier = Modifier.padding(top = 12.dp)) {
+    TextButton(onClick = { setBar(BarItem.DEFAULT) }, enabled = bar != BarItem.DEFAULT, modifier = Modifier.padding(top = 12.dp)) {
         Text("Reset to default")
     }
 }
@@ -304,14 +332,34 @@ private fun <T> List<T>.swapped(a: Int, b: Int): List<T> = toMutableList().also 
     it[b] = moved
 }
 
+/** A button as Settings lists it. Tapping a custom shortcut's row ([onClick]) opens it for editing. */
 @Composable
-private fun BarButtonRow(button: BarButton, controls: @Composable () -> Unit) {
+private fun BarItemRow(s: AppSettings, item: BarItem, onClick: (() -> Unit)? = null, controls: @Composable () -> Unit) {
+    val shortcut = (item as? BarItem.Custom)?.let { s.shortcut(it.id) }
+    val summary = when (item) {
+        is BarItem.Builtin -> item.button.summary
+        // With no name, the title already shows the keys.
+        is BarItem.Custom -> shortcut?.takeIf { it.name.isNotBlank() }?.keysText
+    }
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(button.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(20.dp))
-        Column(Modifier.weight(1f)) {
-            Text(button.title, style = MaterialTheme.typography.bodyLarge)
-            button.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        // Only the name is clickable, so the buttons beside it keep their own labels for screen readers.
+        Row(
+            Modifier
+                .weight(1f)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val tint = MaterialTheme.colorScheme.primary
+            when {
+                item is BarItem.Builtin -> Icon(item.button.icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
+                shortcut != null -> ShortcutGlyph(shortcut, tint)
+            }
+            Spacer(Modifier.width(20.dp))
+            Column {
+                Text(s.titleOf(item), style = MaterialTheme.typography.bodyLarge)
+                summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
         }
         controls()
     }
@@ -473,7 +521,7 @@ private fun RadioSetting(title: String, summary: String?, selected: Boolean, onS
 }
 
 @Composable
-private fun Section(title: String) {
+internal fun Section(title: String) {
     Text(
         title,
         style = MaterialTheme.typography.titleSmall,
@@ -512,6 +560,6 @@ private fun SwitchSetting(title: String, summary: String?, checked: Boolean, onC
 }
 
 @Composable
-private fun Help(text: String) {
+internal fun Help(text: String) {
     Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = MaterialTheme.typography.bodyMedium.lineHeight)
 }
