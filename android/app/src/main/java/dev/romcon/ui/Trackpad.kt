@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import dev.romcon.data.AppSettings
@@ -140,9 +141,14 @@ fun Trackpad(settings: AppSettings, actions: PointerActions, modifier: Modifier 
                 },
             contentAlignment = Alignment.Center,
         ) {
+            // One short gesture per line, so nothing wraps on a narrow pad. Taps only work with tap to click on.
             Text(
-                "Tap to click  ·  two fingers to scroll\nTwo-finger tap for right-click  ·  double-tap and drag to drag",
-                style = MaterialTheme.typography.bodySmall,
+                if (settings.tapToClick) {
+                    "Tap to click\nTwo-finger tap to right-click\nTwo fingers to scroll\nDouble-tap and slide to drag"
+                } else {
+                    "Two fingers to scroll"
+                },
+                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 22.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(24.dp),

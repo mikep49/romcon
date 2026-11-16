@@ -306,19 +306,24 @@ private fun PcCard(
 
 @Composable
 private fun EmptyHint(hasSaved: Boolean) {
+    if (hasSaved) {
+        // Already set up: one quiet line under the PCs, not a card of instructions.
+        Text(
+            "No other PCs found. To add one by its Tailscale address or IP, tap Add by address.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        return
+    }
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Looking for PCs running RomCon…", style = MaterialTheme.typography.bodyMedium)
             Text(
-                if (hasSaved) "No other PCs found on this Wi-Fi." else "Looking for PCs running RomCon…",
-                style = MaterialTheme.typography.bodyMedium,
+                "1. Start RomCon on your Windows PC.\n2. Keep this phone on the same Wi-Fi. The PC appears here; tap it to pair.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (!hasSaved) {
-                Text(
-                    "1. Start RomCon on your Windows PC.\n2. Keep this phone on the same Wi-Fi. The PC appears here; tap it to pair.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Text(
                 "Using Tailscale, or the PC doesn't show up? Tap Add by address and enter the PC's Tailscale address (100.x.y.z), its name, or its LAN IP. The RomCon window on the PC lists them.",
                 style = MaterialTheme.typography.bodySmall,
@@ -422,7 +427,8 @@ private fun PairingDialog(p: PairingUi, onSubmit: (String) -> Unit, onRetry: () 
                             .fillMaxWidth()
                             .focusRequester(focus),
                     )
-                    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(12.dp)) {
+                    // A shade off the dialog's own colour (surfaceContainerHigh), so the box shows.
+                    Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, shape = RoundedCornerShape(12.dp)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp)) {
                             Text("PC code", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(verifyCode(p.fingerprint), style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Monospace)

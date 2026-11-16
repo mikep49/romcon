@@ -5,8 +5,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -28,13 +28,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.outlined.Backspace
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -44,11 +53,13 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,7 +75,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
@@ -76,6 +96,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.romcon.AppViewModel
@@ -422,16 +443,25 @@ private fun KeysPanel(
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             keysTabs.forEachIndexed { i, label ->
-                FilterChip(selected = tab == i, onClick = { onTab(i) }, label = { Text(label) })
+                SegmentedButton(
+                    selected = tab == i,
+                    onClick = { onTab(i) },
+                    shape = SegmentedButtonDefaults.itemShape(i, keysTabs.size),
+                    icon = {},
+                    label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                )
             }
         }
-        // A fixed height, so switching tabs never moves the rows above under the user's finger.
+        // A fixed height, so switching tabs never moves the rows above under the user's finger. Four rows fit with a
+        // little to spare for rounding; a tab with more scrolls, and its edges fade to show there's more.
+        val scroll = rememberScrollState()
         Column(
             Modifier
-                .height(194.dp)
-                .verticalScroll(rememberScrollState()),
+                .height(KEYS_HEIGHT)
+                .fadingEdges(scroll)
+                .verticalScroll(scroll),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             val key: (Int) -> () -> Unit = { vk -> { haptic(false); vm.key(vk) } }
@@ -452,16 +482,17 @@ private fun KeysPanel(
                         KeyCap("PgDn", it, repeat = true, onPress = key(Vk.PAGE_DOWN))
                     }
                     KeyRow {
-                        KeyCap("⌫", it, repeat = true, description = "Backspace", onPress = key(Vk.BACK))
+                        KeyCap("Backspace", it, repeat = true, icon = Icons.AutoMirrored.Outlined.Backspace, onPress = key(Vk.BACK))
                         KeyCap("Del", it, repeat = true, onPress = key(Vk.DELETE))
                         KeyCap("Space", it, repeat = true, onPress = key(Vk.SPACE))
                         KeyCap("Enter", it, onPress = key(Vk.ENTER))
                     }
+                    // Arrow keys point the same way in every language, so these turn one upward arrow rather than mirror.
                     KeyRow {
-                        KeyCap("←", it, repeat = true, description = "Left arrow", onPress = key(Vk.LEFT))
-                        KeyCap("↑", it, repeat = true, description = "Up arrow", onPress = key(Vk.UP))
-                        KeyCap("↓", it, repeat = true, description = "Down arrow", onPress = key(Vk.DOWN))
-                        KeyCap("→", it, repeat = true, description = "Right arrow", onPress = key(Vk.RIGHT))
+                        KeyCap("Left arrow", it, repeat = true, icon = Icons.Filled.ArrowUpward, turn = -90f, onPress = key(Vk.LEFT))
+                        KeyCap("Up arrow", it, repeat = true, icon = Icons.Filled.ArrowUpward, onPress = key(Vk.UP))
+                        KeyCap("Down arrow", it, repeat = true, icon = Icons.Filled.ArrowUpward, turn = 180f, onPress = key(Vk.DOWN))
+                        KeyCap("Right arrow", it, repeat = true, icon = Icons.Filled.ArrowUpward, turn = 90f, onPress = key(Vk.RIGHT))
                     }
                 }
                 1 -> (1..12).chunked(6).forEach { row ->
@@ -469,14 +500,14 @@ private fun KeysPanel(
                 }
                 2 -> {
                     KeyRow {
-                        KeyCap("⏮ Prev", it, onPress = key(Vk.MEDIA_PREV))
-                        KeyCap("⏯ Play", it, onPress = key(Vk.MEDIA_PLAY_PAUSE))
-                        KeyCap("⏭ Next", it, onPress = key(Vk.MEDIA_NEXT))
+                        KeyCap("Previous track", it, icon = Icons.Filled.SkipPrevious, onPress = key(Vk.MEDIA_PREV))
+                        KeyCap("Play or pause", it, icon = Icons.Filled.PlayArrow, onPress = key(Vk.MEDIA_PLAY_PAUSE))
+                        KeyCap("Next track", it, icon = Icons.Filled.SkipNext, onPress = key(Vk.MEDIA_NEXT))
                     }
                     KeyRow {
-                        KeyCap("Vol −", it, repeat = true, description = "Volume down", onPress = key(Vk.VOLUME_DOWN))
-                        KeyCap("Mute", it, onPress = key(Vk.VOLUME_MUTE))
-                        KeyCap("Vol +", it, repeat = true, description = "Volume up", onPress = key(Vk.VOLUME_UP))
+                        KeyCap("Volume down", it, repeat = true, icon = Icons.AutoMirrored.Filled.VolumeDown, onPress = key(Vk.VOLUME_DOWN))
+                        KeyCap("Mute", it, icon = Icons.AutoMirrored.Filled.VolumeOff, onPress = key(Vk.VOLUME_MUTE))
+                        KeyCap("Volume up", it, repeat = true, icon = Icons.AutoMirrored.Filled.VolumeUp, onPress = key(Vk.VOLUME_UP))
                     }
                 }
                 else -> {
@@ -504,13 +535,54 @@ private fun KeyRow(content: @Composable (Modifier) -> Unit) {
     }
 }
 
+/** Four rows of keys and the gaps between them, plus a couple of dp so rounding to whole pixels never clips the last row. */
+private val KEYS_HEIGHT = 196.dp
+
+/** Fades out whatever is scrolled past the top or bottom edge, so a list that continues looks like it does. */
+private fun Modifier.fadingEdges(scroll: ScrollState, length: Dp = 20.dp): Modifier = this
+    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    .drawWithContent {
+        drawContent()
+        val h = length.toPx().coerceAtMost(size.height / 2)
+        if (scroll.canScrollBackward) {
+            drawRect(
+                Brush.verticalGradient(listOf(Color.Black, Color.Transparent), startY = 0f, endY = h),
+                size = Size(size.width, h),
+                blendMode = BlendMode.DstOut,
+            )
+        }
+        if (scroll.canScrollForward) {
+            drawRect(
+                Brush.verticalGradient(listOf(Color.Transparent, Color.Black), startY = size.height - h, endY = size.height),
+                topLeft = Offset(0f, size.height - h),
+                size = Size(size.width, h),
+                blendMode = BlendMode.DstOut,
+            )
+        }
+    }
+
+/**
+ * One key. With an [icon] the cap shows just that, and [label] is what screen readers say; [turn] rotates the icon,
+ * in degrees. With [repeat], holding it presses again and again.
+ */
 @Composable
-private fun KeyCap(label: String, modifier: Modifier, repeat: Boolean = false, description: String? = null, onPress: () -> Unit) {
+private fun KeyCap(
+    label: String,
+    modifier: Modifier,
+    repeat: Boolean = false,
+    icon: ImageVector? = null,
+    turn: Float = 0f,
+    onPress: () -> Unit,
+) {
     val shape = RoundedCornerShape(10.dp)
     val idle = MaterialTheme.colorScheme.surfaceContainerHighest
     val text: @Composable () -> Unit = {
         Box(Modifier.padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (icon != null) {
+                Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp).rotate(turn))
+            } else {
+                Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
     if (!repeat) {
@@ -527,7 +599,7 @@ private fun KeyCap(label: String, modifier: Modifier, repeat: Boolean = false, d
             .height(44.dp)
             .clearAndSetSemantics {
                 role = Role.Button
-                contentDescription = description ?: label
+                contentDescription = label
                 onClick {
                     current()
                     true
@@ -567,13 +639,17 @@ private fun SendTextDialog(onSend: (String) -> Unit, onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(value = text, onValueChange = { text = it }, minLines = 3, maxLines = 8, modifier = Modifier.fillMaxWidth())
+                // The whole row toggles, so the box itself can sit flush with the text field's edge.
                 Row(
                     Modifier
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { enter = !enter },
+                        .toggleable(value = enter, role = Role.Checkbox, onValueChange = { enter = it })
+                        .padding(vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(checked = enter, onCheckedChange = { enter = it })
+                    Checkbox(checked = enter, onCheckedChange = null)
+                    Spacer(Modifier.width(12.dp))
                     Text("Press Enter afterwards")
                 }
             }

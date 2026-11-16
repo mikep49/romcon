@@ -212,7 +212,7 @@ namespace RomCon
             stopButton.Click += (s, e) => server.Pairing.Stop();
 
             noPhones.Dock = DockStyle.Top;
-            noPhones.Height = S(40);
+            noPhones.Height = S(28); // its one line, plus a little room before the pairing below
             phoneList.Controls.Add(noPhones);
             phoneList.HandleCreated += (s, e) => Theme.StyleScrollBars(phoneList.Handle, Theme.Current);
             foreach (var c in new Control[] { pinHint, pinLabel, pinExpiry, stopButton }) c.Visible = false;

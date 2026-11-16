@@ -104,8 +104,11 @@ namespace RomCon
 
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19; // Windows 10 before 2004
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-        public const int DWMWA_CAPTION_COLOR = 35; // Windows 11
-        public const int DWMWA_TEXT_COLOR = 36;    // Windows 11
+        public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33; // Windows 11
+        public const int DWMWA_BORDER_COLOR = 34;             // Windows 11
+        public const int DWMWA_CAPTION_COLOR = 35;            // Windows 11
+        public const int DWMWA_TEXT_COLOR = 36;               // Windows 11
+        public const int DWMWCP_ROUNDSMALL = 3;
 
         public const uint SWP_NOSIZE = 0x0001;
         public const uint SWP_NOMOVE = 0x0002;
