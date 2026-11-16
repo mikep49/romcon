@@ -61,6 +61,7 @@ namespace RomCon
             menu.Items.Add(new ToolStripSeparator());
             if (!IsElevated) menu.Items.Add("Restart as administrator", null, (s, e) => RestartElevated());
             menu.Items.Add("Exit", null, (s, e) => Exit());
+            Ui.StyleMenu(menu);
 
             // Explorer asks programs to add their tray icons again when the taskbar comes back after a restart, or comes up after
             // RomCon at sign-in. Windows drops that request on its way to a program running as administrator unless it is let in.

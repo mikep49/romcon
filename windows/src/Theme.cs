@@ -147,6 +147,26 @@ namespace RomCon
             }
         }
 
+        /// <summary>
+        /// Gives a pop-up menu Windows 11's small rounded corners, with a border in the theme's line colour.
+        /// False on older Windows, which keeps square corners and leaves the border to the menu.
+        /// </summary>
+        public static bool StyleMenuWindow(IntPtr hwnd, Palette p)
+        {
+            try
+            {
+                int round = Native.DWMWCP_ROUNDSMALL;
+                if (Native.DwmSetWindowAttribute(hwnd, Native.DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int)) != 0) return false;
+                int border = ColorRef(p.Line);
+                Native.DwmSetWindowAttribute(hwnd, Native.DWMWA_BORDER_COLOR, ref border, sizeof(int));
+                return true;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException)
+            {
+                return false;
+            }
+        }
+
         /// <summary>Gives a control's scroll bars the dark look in dark themes.</summary>
         public static void StyleScrollBars(IntPtr hwnd, Palette p)
         {

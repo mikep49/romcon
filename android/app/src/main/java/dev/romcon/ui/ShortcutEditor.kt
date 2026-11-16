@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -111,11 +112,7 @@ internal fun ShortcutEditor(vm: AppViewModel, s: AppSettings) {
         )
     }
     if (sc.keys.size < CustomShortcut.MAX_KEYS) {
-        TextButton(onClick = { vm.editDraft { it.copy(keys = it.keys + KeyCombo()) } }) {
-            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Add another hotkey")
-        }
+        ActionRow(Icons.Filled.Add, "Add another hotkey", onClick = { vm.editDraft { it.copy(keys = it.keys + KeyCombo()) } })
     }
     Help(
         if (sc.keys.size > 1) {
@@ -138,27 +135,33 @@ internal fun ShortcutEditor(vm: AppViewModel, s: AppSettings) {
     }
     vm.shortcutImageError?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
     Help("A logo with a transparent background looks best. Or pick one of these:")
-    FlowRow(
-        Modifier.fillMaxWidth().padding(top = 8.dp).selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        shortcutSymbols.forEach { symbol ->
-            val selected = sc.image == null && sc.icon == symbol.key
-            Box(
-                Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                    .selectable(selected = selected, role = Role.RadioButton) { vm.editDraft { it.copy(icon = symbol.key, image = null) } }
-                    .semantics { contentDescription = symbol.label },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    symbol.vector,
-                    contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    // A grid that runs edge to edge: as many 48dp cells as fit, spread evenly, the last row kept on the same columns.
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        val cell = 48.dp
+        val columns = ((maxWidth + 4.dp) / (cell + 4.dp)).toInt().coerceAtLeast(1)
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            shortcutSymbols.chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    row.forEach { symbol ->
+                        val selected = sc.image == null && sc.icon == symbol.key
+                        Box(
+                            Modifier
+                                .size(cell)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                .selectable(selected = selected, role = Role.RadioButton) { vm.editDraft { it.copy(icon = symbol.key, image = null) } }
+                                .semantics { contentDescription = symbol.label },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                symbol.vector,
+                                contentDescription = null,
+                                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.size(cell)) }
+                }
             }
         }
     }

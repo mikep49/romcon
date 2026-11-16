@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
@@ -64,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -306,11 +308,7 @@ private fun BottomBarSettings(vm: AppViewModel, s: AppSettings) {
             }
         }
     }
-    TextButton(onClick = vm::newShortcut) {
-        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("New shortcut")
-    }
+    ActionRow(Icons.Filled.Add, "New shortcut", onClick = vm::newShortcut)
 
     Section("More buttons")
     if (full) Help("The bar is full.")
@@ -324,9 +322,8 @@ private fun BottomBarSettings(vm: AppViewModel, s: AppSettings) {
         }
     }
 
-    TextButton(onClick = { setBar(BarItem.DEFAULT) }, enabled = bar != BarItem.DEFAULT, modifier = Modifier.padding(top = 12.dp)) {
-        Text("Reset to default")
-    }
+    Spacer(Modifier.padding(top = 8.dp))
+    ActionRow(Icons.Filled.RestartAlt, "Reset to default", enabled = bar != BarItem.DEFAULT, onClick = { setBar(BarItem.DEFAULT) })
 }
 
 private fun <T> List<T>.swapped(a: Int, b: Int): List<T> = toMutableList().also {
@@ -502,6 +499,23 @@ private fun PageLink(icon: ImageVector, title: String, summary: String, onClick:
             Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** A list action, like New shortcut: its icon and text line up with the icons and titles of the rows around it. */
+@Composable
+internal fun ActionRow(icon: ImageVector, text: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = color)
+        Spacer(Modifier.width(20.dp))
+        Text(text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = color)
     }
 }
 

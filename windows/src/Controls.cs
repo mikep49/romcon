@@ -90,6 +90,34 @@ namespace RomCon
             return path;
         }
 
+        /// <summary>
+        /// Draws a pop-up menu in the window's theme, with taller rows like Windows 11's own menus.
+        /// Call it once the items are added: it pads the ones already there.
+        /// </summary>
+        public static void StyleMenu(ToolStripDropDown menu)
+        {
+            var renderer = new MenuRenderer();
+            menu.Renderer = renderer;
+            foreach (ToolStripItem item in menu.Items)
+            {
+                if (item is ToolStripMenuItem) item.Padding = new Padding(item.Padding.Left, S(5), item.Padding.Right, S(5));
+            }
+            // A drop-down menu sets its own padding, so the room above the first row and below the last goes on those rows.
+            if (menu.Items.Count > 0)
+            {
+                var first = menu.Items[0];
+                var last = menu.Items[menu.Items.Count - 1];
+                first.Margin = new Padding(first.Margin.Left, first.Margin.Top + S(4), first.Margin.Right, first.Margin.Bottom);
+                last.Margin = new Padding(last.Margin.Left, last.Margin.Top, last.Margin.Right, last.Margin.Bottom + S(4));
+            }
+            // The border colour follows the theme, so it's set again each time the menu opens.
+            menu.HandleCreated += (s, e) => renderer.RoundedByWindows = Theme.StyleMenuWindow(menu.Handle, Theme.Current);
+            menu.Opening += (s, e) =>
+            {
+                if (menu.IsHandleCreated) renderer.RoundedByWindows = Theme.StyleMenuWindow(menu.Handle, Theme.Current);
+            };
+        }
+
         static float ReadScale()
         {
             using (var g = Graphics.FromHwnd(IntPtr.Zero)) return g.DpiX / 96f;
@@ -101,6 +129,71 @@ namespace RomCon
             if (font.Name == "Cascadia Mono") return font;
             font.Dispose();
             return new Font("Consolas", size);
+        }
+    }
+
+    /// <summary>Paints a menu flat in the current theme: a rounded highlight under the hovered row, and thin separators.</summary>
+    sealed class MenuRenderer : ToolStripRenderer
+    {
+        /// <summary>True once Windows 11 rounds the menu and draws its border; older Windows gets a plain border from here.</summary>
+        public bool RoundedByWindows;
+
+        /// <summary>A lifted surface in dark themes, like the cards; the page colour in light, which is near white.</summary>
+        static Color Back(Palette p)
+        {
+            return p.IsDark ? p.Card : p.Bg;
+        }
+
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            e.Graphics.Clear(Back(Theme.Current));
+        }
+
+        protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
+        {
+            // The check column stays the same colour as the rest.
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            if (RoundedByWindows) return;
+            using (var pen = new Pen(Theme.Current.Line)) e.Graphics.DrawRectangle(pen, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!e.Item.Selected || !e.Item.Enabled) return;
+            var p = Theme.Current;
+            // An item can be laid out a little wider than the menu, so the highlight is measured against the menu.
+            int width = Math.Min(e.Item.Width, e.ToolStrip.ClientSize.Width - e.Item.Bounds.X);
+            var row = new RectangleF(Ui.S(4), 0, width - Ui.S(8), e.Item.Height);
+            Ui.FillRound(e.Graphics, Theme.Blend(Back(p), p.Text, p.IsDark ? 0.1f : 0.07f), row, Ui.S(4));
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            var p = Theme.Current;
+            Color color = e.Item.Enabled ? p.Text : Theme.Blend(p.Text, Back(p), 0.55f);
+            // The menu's own layout puts the text a little high once rows are padded, so centre it on the whole row.
+            var r = new Rectangle(e.TextRectangle.X, 0, e.TextRectangle.Width, e.Item.Height);
+            TextRenderer.DrawText(e.Graphics, e.Text, e.TextFont, r, color, Ui.Centered);
+        }
+
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            // In the middle of the margin before the text, rather than in the small box the menu sets aside for it.
+            int left = Ui.S(6), right = Math.Max(left + Ui.S(12), e.ToolStrip.Padding.Left);
+            var box = new Rectangle(left, 0, right - left, e.Item.Height);
+            TextRenderer.DrawText(e.Graphics, Ui.IconCheck, Ui.SmallIcons, box, Theme.Current.Primary, Ui.Centered | TextFormatFlags.HorizontalCenter);
+        }
+
+        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+        {
+            using (var brush = new SolidBrush(Theme.Current.Line))
+            {
+                int width = Math.Min(e.Item.Width, e.ToolStrip.ClientSize.Width - e.Item.Bounds.X);
+                e.Graphics.FillRectangle(brush, Ui.S(4), e.Item.Height / 2, width - Ui.S(8), Math.Max(1, Ui.S(1)));
+            }
         }
     }
 
@@ -502,9 +595,13 @@ namespace RomCon
             var g = e.Graphics;
             g.Clear(p.Card);
             int body = Height - Ui.S(1);
-            TextRenderer.DrawText(g, Ui.IconPhone, Ui.Icons, new Rectangle(0, 0, Ui.S(20), body), p.Muted, Ui.Centered);
+            // The phone in a round badge, lit while it's connected, like the PCs in the phone app.
+            int badge = Ui.S(36);
+            var circle = new Rectangle(0, (body - badge) / 2, badge, badge);
+            Ui.FillCircle(g, live ? p.PrimaryC : p.Line, circle);
+            TextRenderer.DrawText(g, Ui.IconPhone, Ui.Icons, circle, live ? p.OnPrimaryC : p.Muted, Ui.Centered | TextFormatFlags.HorizontalCenter);
 
-            int x = Ui.S(30), w = Remove.Left - Ui.S(8) - x;
+            int x = circle.Right + Ui.S(12), w = Remove.Left - Ui.S(8) - x;
             int nameHeight = Ui.Strong.Height, statusHeight = Ui.Small.Height;
             int y = (body - nameHeight - statusHeight) / 2;
             TextRenderer.DrawText(g, DeviceName ?? "", Ui.Strong, new Rectangle(x, y, w, nameHeight), p.Text, Ui.OneLine);
