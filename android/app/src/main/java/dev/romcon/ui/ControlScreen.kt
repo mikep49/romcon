@@ -93,6 +93,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -193,6 +195,7 @@ fun ControlScreen(vm: AppViewModel) {
         BottomBar(
             items = settings.bottomBar,
             shortcuts = settings.shortcuts,
+            running = vm.runningShortcut,
             selected = { button ->
                 when (button) {
                     BarButton.KEYBOARD -> imeVisible
@@ -396,6 +399,9 @@ private fun AppViewModel.press(button: BarButton) {
     }
 }
 
+/** A key in the Shortcuts tab. [on] lights it up. */
+private class Cap(val label: String, val on: Boolean = false, val action: () -> Unit)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun KeysPanel(
@@ -512,13 +518,13 @@ private fun KeysPanel(
                 }
                 else -> {
                     // The user's own shortcuts come first, so ones that don't fit on the bar are still close at hand.
-                    val all: List<Pair<String, () -> Unit>> =
-                        custom.map<CustomShortcut, Pair<String, () -> Unit>> { sc -> sc.title to { haptic(false); vm.runShortcut(sc) } } +
-                            listOf<Pair<String, () -> Unit>>("Switch app" to { haptic(false); vm.switchApp() }) +
-                            shortcuts.map { sc -> sc.label to { haptic(false); vm.shortcut(sc.vk, sc.mods) } }
+                    // One that's partway through its hotkeys is lit, and pressing it again stops it.
+                    val all = custom.map { sc -> Cap(sc.title, on = sc.id == vm.runningShortcut) { haptic(false); vm.runShortcut(sc) } } +
+                        Cap("Switch app") { haptic(false); vm.switchApp() } +
+                        shortcuts.map { sc -> Cap(sc.label) { haptic(false); vm.shortcut(sc.vk, sc.mods) } }
                     all.chunked(4).forEach { row ->
                         KeyRow { m ->
-                            row.forEach { (label, action) -> KeyCap(label, m, onPress = action) }
+                            row.forEach { cap -> KeyCap(cap.label, m, on = cap.on, onPress = cap.action) }
                             repeat(4 - row.size) { Spacer(m) }
                         }
                     }
@@ -572,10 +578,11 @@ private fun KeyCap(
     repeat: Boolean = false,
     icon: ImageVector? = null,
     turn: Float = 0f,
+    on: Boolean = false,
     onPress: () -> Unit,
 ) {
     val shape = RoundedCornerShape(10.dp)
-    val idle = MaterialTheme.colorScheme.surfaceContainerHighest
+    val idle = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
     val text: @Composable () -> Unit = {
         Box(Modifier.padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
             if (icon != null) {
@@ -586,7 +593,12 @@ private fun KeyCap(
         }
     }
     if (!repeat) {
-        Surface(onClick = onPress, shape = shape, color = idle, modifier = modifier.height(44.dp)) { text() }
+        Surface(
+            onClick = onPress,
+            shape = shape,
+            color = idle,
+            modifier = modifier.height(44.dp).semantics { if (on) stateDescription = "Running" },
+        ) { text() }
         return
     }
     // Held keys repeat, like on a real keyboard.

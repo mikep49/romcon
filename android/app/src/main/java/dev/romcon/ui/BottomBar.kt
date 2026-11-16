@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.romcon.data.BarButton
@@ -93,12 +94,14 @@ private val BarButton.repeats: Boolean
 /**
  * The row of buttons under the trackpad; which ones, and in what order, is chosen in Settings.
  * [onPress] fires for a tap (and for each repeat of a held volume button); [onMouse] mirrors the finger on a mouse button.
- * [onShortcut] fires for a tap on one of the user's own shortcuts, looked up in [shortcuts].
+ * [onShortcut] fires for a tap on one of the user's own shortcuts, looked up in [shortcuts]; the one whose id is
+ * [running] is partway through its hotkeys, and a tap on it stops it.
  */
 @Composable
 fun BottomBar(
     items: List<BarItem>,
     shortcuts: List<CustomShortcut>,
+    running: String?,
     selected: (BarButton) -> Boolean,
     onPress: (BarButton) -> Unit,
     onShortcut: (CustomShortcut) -> Unit,
@@ -113,11 +116,15 @@ fun BottomBar(
                 when (item) {
                     is BarItem.Builtin -> BuiltinBarItem(item.button, slot, selected(item.button), onPress, onMouse)
                     is BarItem.Custom -> shortcuts.firstOrNull { it.id == item.id }?.let { shortcut ->
+                        val on = shortcut.id == running
                         BarCell(
                             label = shortcut.title,
                             description = shortcut.title,
-                            highlighted = false,
-                            modifier = slot.clickable(role = Role.Button) { onShortcut(shortcut) },
+                            highlighted = on,
+                            modifier = slot
+                                .background(if (on) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                .semantics { if (on) stateDescription = "Running" }
+                                .clickable(role = Role.Button, onClickLabel = if (on) "Stop" else null) { onShortcut(shortcut) },
                         ) { color -> ShortcutGlyph(shortcut, color) }
                     }
                 }

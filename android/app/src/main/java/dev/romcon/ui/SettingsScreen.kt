@@ -338,8 +338,8 @@ private fun BarItemRow(s: AppSettings, item: BarItem, onClick: (() -> Unit)? = n
     val shortcut = (item as? BarItem.Custom)?.let { s.shortcut(it.id) }
     val summary = when (item) {
         is BarItem.Builtin -> item.button.summary
-        // With no name, the title already shows the keys.
-        is BarItem.Custom -> shortcut?.takeIf { it.name.isNotBlank() }?.keysText
+        // With no name, the title already shows the keys, though not the waits between them.
+        is BarItem.Custom -> shortcut?.takeIf { it.name.isNotBlank() || it.waits }?.keysText
     }
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         // Only the name is clickable, so the buttons beside it keep their own labels for screen readers.

@@ -211,13 +211,13 @@ class Store(context: Context) {
                 val keys = o.getJSONArray("keys").let { k ->
                     (0 until k.length()).map { j ->
                         val key = k.getJSONObject(j)
-                        KeyCombo(key.getInt("vk"), key.optInt("mods") and 0xF)
+                        KeyCombo(key.getInt("vk"), key.optInt("mods") and 0xF, key.optInt("wait").takeIf { it in Wait.MIN_MS..Wait.MAX_MS } ?: 0)
                     }
-                }
+                }.filter { it.vk in 1..0xFE }.take(CustomShortcut.MAX_KEYS).mapIndexed { j, k -> if (j == 0) k.copy(waitMs = 0) else k }
                 CustomShortcut(
                     id = o.getString("id").takeIf { id -> id.isNotEmpty() && id.all { it.isLetterOrDigit() } } ?: return@mapNotNull null,
                     name = o.optString("name"),
-                    keys = keys.filter { it.vk in 1..0xFE }.take(CustomShortcut.MAX_KEYS),
+                    keys = keys,
                     icon = o.optString("icon", CustomShortcut.DEFAULT_ICON),
                     image = o.optString("image").takeIf { ShortcutImages.isValidName(it) },
                 ).takeIf { it.ready }
@@ -231,7 +231,7 @@ class Store(context: Context) {
         val array = JSONArray()
         shortcuts.forEach { sc ->
             val keys = JSONArray()
-            sc.keys.forEach { keys.put(JSONObject().put("vk", it.vk).put("mods", it.mods)) }
+            sc.keys.forEach { k -> keys.put(JSONObject().put("vk", k.vk).put("mods", k.mods).apply { if (k.waitMs > 0) put("wait", k.waitMs) }) }
             array.put(
                 JSONObject()
                     .put("id", sc.id)

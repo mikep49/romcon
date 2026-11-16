@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -28,7 +29,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -50,12 +54,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.romcon.AppViewModel
@@ -63,19 +69,22 @@ import dev.romcon.data.AppSettings
 import dev.romcon.data.BarItem
 import dev.romcon.data.CustomShortcut
 import dev.romcon.data.KeyCombo
+import dev.romcon.data.Wait
 import dev.romcon.input.ModKey
 import dev.romcon.input.PcKeys
 
 internal val AppViewModel.shortcutEditorTitle: String
     get() = if (shortcutDraft?.original == null) "New shortcut" else "Edit shortcut"
 
-/** Settings' page for making or changing a custom shortcut: its name, the hotkeys it presses, and its icon. */
+/** Settings' page for making or changing a custom shortcut: its name, the hotkeys it presses (and the waits between them), and its icon. */
 @Composable
 internal fun ShortcutEditor(vm: AppViewModel, s: AppSettings) {
     val draft = vm.shortcutDraft ?: return
     val sc = draft.shortcut
     /** The hotkey whose key is being chosen, by its place in the list. */
     var choosingKeyFor by rememberSaveable { mutableStateOf<Int?>(null) }
+    /** The hotkey whose wait (before it) is being chosen, by its place in the list. */
+    var choosingWaitFor by rememberSaveable { mutableStateOf<Int?>(null) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.importShortcutImage(uri)
@@ -99,13 +108,21 @@ internal fun ShortcutEditor(vm: AppViewModel, s: AppSettings) {
 
     Section(if (sc.keys.size > 1) "Hotkeys" else "Hotkey")
     sc.keys.forEachIndexed { i, combo ->
+        if (i > 0) {
+            WaitStep(
+                waitMs = combo.waitMs,
+                number = i + 1,
+                onChoose = { choosingWaitFor = i },
+                onRemove = { editKey(i) { it.copy(waitMs = 0) } },
+            )
+        }
         HotkeyCard(
             number = if (sc.keys.size > 1) i + 1 else null,
             combo = combo,
             onToggleMod = { bit -> editKey(i) { it.copy(mods = it.mods xor bit) } },
             onChooseKey = { choosingKeyFor = i },
             onRemove = if (sc.keys.size > 1) {
-                { vm.editDraft { d -> d.copy(keys = d.keys.filterIndexed { j, _ -> j != i }) } }
+                { vm.editDraft { it.withoutKey(i) } }
             } else {
                 null
             },
@@ -116,9 +133,9 @@ internal fun ShortcutEditor(vm: AppViewModel, s: AppSettings) {
     }
     Help(
         if (sc.keys.size > 1) {
-            "Pressed one after the other."
+            "Pressed one after the other. Add a wait between two to give the PC time to catch up, say for a menu to open."
         } else {
-            "Add another to press several in a row, like Ctrl+K then Ctrl+C."
+            "Add another to press several in a row, like Ctrl+K then Ctrl+C. You can also wait between them."
         },
     )
 
@@ -189,6 +206,18 @@ internal fun ShortcutEditor(vm: AppViewModel, s: AppSettings) {
                 choosingKeyFor = null
             },
             onDismiss = { choosingKeyFor = null },
+        )
+    }
+
+    choosingWaitFor?.let { i ->
+        WaitPicker(
+            current = sc.keys.getOrNull(i)?.waitMs ?: 0,
+            number = i + 1,
+            onPick = { ms ->
+                editKey(i) { it.copy(waitMs = ms) }
+                choosingWaitFor = null
+            },
+            onDismiss = { choosingWaitFor = null },
         )
     }
 
@@ -282,6 +311,68 @@ private fun HotkeyCard(number: Int?, combo: KeyCombo, onToggleMod: (Int) -> Unit
             }
         }
     }
+}
+
+/** Between two hotkeys: the wait before hotkey [number], or a chip to add one. */
+@Composable
+private fun WaitStep(waitMs: Int, number: Int, onChoose: () -> Unit, onRemove: () -> Unit) {
+    Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        val set = waitMs > 0
+        val label = if (set) "Wait ${Wait.text(waitMs)}" else "Add a wait"
+        AssistChip(
+            onClick = onChoose,
+            // Screen readers hear which hotkey it's before, since there may be several.
+            label = { Text(label, Modifier.clearAndSetSemantics { contentDescription = "$label before hotkey $number" }) },
+            leadingIcon = { Icon(Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
+            colors = if (set) {
+                AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            } else {
+                AssistChipDefaults.assistChipColors()
+            },
+            border = if (set) null else AssistChipDefaults.assistChipBorder(enabled = true),
+        )
+        if (set) {
+            IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, contentDescription = "Remove the wait before hotkey $number") }
+        }
+    }
+}
+
+/** How long to wait before hotkey [number]: a few common lengths, or any number of seconds. */
+@Composable
+private fun WaitPicker(current: Int, number: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf(if (current > 0) Wait.seconds(current) else "") }
+    val ms = Wait.parse(text)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Wait before hotkey $number") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Help("After pressing hotkey ${number - 1}, how long to wait before pressing this one.")
+                FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Wait.PRESETS.forEach { preset ->
+                        FilterChip(selected = ms == preset, onClick = { text = Wait.seconds(preset) }, label = { Text(Wait.text(preset)) })
+                    }
+                }
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { v -> text = v.filter { it.isDigit() || it == '.' || it == ',' }.take(6) },
+                    label = { Text("Seconds") },
+                    supportingText = { Text("From ${Wait.text(Wait.MIN_MS)} to ${Wait.text(Wait.MAX_MS)}.") },
+                    isError = text.isNotBlank() && ms == null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { ms?.let(onPick) }),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { ms?.let(onPick) }, enabled = ms != null) { Text("Done") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** Every key a hotkey can use, in groups. */

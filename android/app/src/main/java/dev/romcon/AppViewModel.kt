@@ -34,6 +34,7 @@ import dev.romcon.update.UpdateStatus
 import dev.romcon.update.Updates
 import dev.romcon.update.isNewer
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -130,6 +131,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var typed by mutableStateOf(TypedLine.EMPTY)
         private set
 
+    /** The id of the custom shortcut that's partway through its hotkeys, waiting to press the next one. */
+    var runningShortcut by mutableStateOf<String?>(null)
+        private set
+
     /** This app's version, as in the release tags. */
     val appVersion: String = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "0"
 
@@ -144,6 +149,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var connectJob: Job? = null
     private var pairJob: Job? = null
     private var altTabJob: Job? = null
+    private var shortcutJob: Job? = null
     private var altHeld = false
     private var resumePc: SavedPc? = null
 
@@ -376,6 +382,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val error = awaitClose(s)
             if (session === s) session = null
             altHeld = false
+            stopShortcut()
             lastError = error.message
             attempt = 1
             delay(300)
@@ -421,6 +428,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun closeSession() {
         altTabJob?.cancel()
+        stopShortcut()
         altHeld = false
         session?.close()
         session = null
@@ -661,12 +669,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         mirror { it.key(vk, mods) }
     }
 
-    /** Presses a custom shortcut's hotkeys one after the other. Like [shortcut], it ignores and clears one-shot latches. */
+    /**
+     * Presses a custom shortcut's hotkeys one after the other, waiting where it says to. Like [shortcut], it ignores
+     * and clears one-shot latches. One shortcut waits at a time: starting another stops it, and so does pressing it
+     * again, or the connection dropping.
+     */
     fun runShortcut(shortcut: CustomShortcut) {
         takeMods()
+        val again = runningShortcut == shortcut.id
+        stopShortcut()
         val s = session ?: return
-        shortcut.keys.forEach { s.key(it.vk, Proto.KEY_TAP, it.mods) }
-        mirror { line -> shortcut.keys.fold(line) { typed, combo -> typed.key(combo.vk, combo.mods) } }
+        if (again) return
+        if (!shortcut.waits) {
+            shortcut.keys.forEach { pressHotkey(s, it) }
+            return
+        }
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                shortcut.keys.forEachIndexed { i, combo ->
+                    if (i > 0 && combo.waitMs > 0) delay(combo.waitMs.toLong())
+                    // After a reconnect, the PC has moved on; don't finish half a shortcut on it.
+                    if (session !== s) return@launch
+                    pressHotkey(s, combo)
+                }
+            } finally {
+                if (shortcutJob === coroutineContext[Job]) {
+                    shortcutJob = null
+                    runningShortcut = null
+                }
+            }
+        }
+        shortcutJob = job
+        runningShortcut = shortcut.id
+        job.start()
+    }
+
+    private fun pressHotkey(s: RemoteSession, combo: KeyCombo) {
+        s.key(combo.vk, Proto.KEY_TAP, combo.mods)
+        mirror { it.key(combo.vk, combo.mods) }
+    }
+
+    private fun stopShortcut() {
+        shortcutJob?.cancel()
+        shortcutJob = null
+        runningShortcut = null
     }
 
     /** Alt+Tab that keeps Alt held between taps, so tapping again moves through the window list. */
