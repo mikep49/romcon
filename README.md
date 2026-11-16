@@ -4,15 +4,17 @@ Use your Android phone as a wireless trackpad and keyboard for a Windows PC. It 
 
 RomCon is two small apps:
 
-- **The Windows app** sits in the tray and turns what the phone sends into mouse and keyboard input. It's a single exe of about 200 KB with no installer. It runs on Windows 10 and 11 as they come.
+- **The Windows app** sits in the tray and turns what the phone sends into mouse and keyboard input. It's a single exe of about 220 KB with no installer. It runs on Windows 10 and 11 as they come.
 - **The Android app** is the remote: a trackpad, your phone keyboard, and buttons for shortcuts and media keys. It needs Android 8.0 or newer.
 
 <p align="center">
-  <img src="docs/images/phone-trackpad.png" width="250" alt="The phone app connected to a PC: a trackpad with a scroll bar, and Keyboard, Windows and Shortcuts buttons below">
-  &nbsp;&nbsp;
-  <img src="docs/images/phone-shortcuts.png" width="250" alt="The phone app with the Shortcuts panel open: Ctrl, Alt, Shift and Win keys, and buttons such as Copy, Paste and Switch app">
+  <img src="docs/images/phone-trackpad.png" width="250" alt="The phone app connected to a PC: a trackpad with a scroll bar, and Keyboard, Windows, Shortcuts and a custom Launcher button below">
+  &nbsp;
+  <img src="docs/images/phone-shortcuts.png" width="250" alt="The phone app with the Shortcuts panel open: Ctrl, Alt, Shift and Win keys, and buttons such as Launcher, Switch app, Copy and Paste">
+  &nbsp;
+  <img src="docs/images/phone-lock-screen.jpg" width="250" alt="The phone's lock screen showing what the PC is playing, with its artwork, a pause button, a seek bar and the PC's volume">
 </p>
-<p align="center"><em>The phone app: the trackpad, and the shortcuts panel.</em></p>
+<p align="center"><em>The phone app: the trackpad, the shortcuts panel, and the PC's media controls on the lock screen.</em></p>
 
 <p align="center">
   <img src="docs/images/windows-app.png" width="720" alt="The RomCon window on the PC, showing a paired phone and the addresses a phone can connect to">
@@ -25,9 +27,10 @@ RomCon is two small apps:
 - **Keyboard.** The phone keyboard types straight into the PC, in any language, emoji included. There are Ctrl, Alt, Shift and Win keys, arrows, F-keys and common shortcuts.
 - **Media and system.** Play/pause, volume, switch app, show desktop and lock the PC.
 - **Media controls on the lock screen.** While the PC is playing something, the phone shows what it is, with play/pause, skip and the PC's volume, without unlocking it or opening the app.
-- **A bar you choose.** Put up to five buttons you use most under the trackpad, including your own: pick the hotkey a button presses (Alt+Space for your launcher, say) and give it an icon or a picture.
+- **A bar you choose.** Put up to five buttons you use most under the trackpad, including your own: pick the hotkey a button presses (Alt+Space for your launcher, say), or a few in a row with a wait between them, and give it an icon or a picture.
 - **Finds your PC.** A PC on the same Wi-Fi shows up by itself. Over Tailscale, add it by address.
 - **Private.** A phone has to be paired with a PIN shown on the PC, and everything it sends is encrypted.
+- **Keeps itself up to date.** Both apps tell you when a new version is out and install it for you.
 
 The [guide](docs/guide.md#features) lists every gesture, key and setting.
 
@@ -43,7 +46,7 @@ The [guide](docs/guide.md#features) lists every gesture, key and setting.
 
 Or download [RomCon.apk](https://github.com/mikep49/romcon/releases/latest/download/RomCon.apk) and open it on the phone. Android asks you to allow installing from your browser or file manager the first time.
 
-Every version is on the [releases page](https://github.com/mikep49/romcon/releases).
+Every version is on the [releases page](https://github.com/mikep49/romcon/releases). After that, both apps check for new versions themselves and offer to [update](docs/guide.md#updates).
 
 ### 2. Pair your phone
 
@@ -65,5 +68,5 @@ Windows itself blocks a few things:
 
 ## More
 
-- [Guide](docs/guide.md): all features, Tailscale, security, and notes for developers.
+- [Guide](docs/guide.md): all features, updates, Tailscale, security, and notes for developers.
 - [Protocol](docs/protocol.md): how the two apps talk to each other.

@@ -4,6 +4,7 @@ Everything the [README](../README.md) leaves out.
 
 - [Features](#features)
 - [Managing phones](#managing-phones)
+- [Updates](#updates)
 - [Tailscale](#tailscale)
 - [Security](#security)
 - [Limitations](#limitations)
@@ -22,14 +23,20 @@ Everything the [README](../README.md) leaves out.
 ### Bottom bar
 
 - Keyboard, Windows key and Shortcuts sit under the pad by default.
-- Choose your own buttons, up to five, and their order in Settings: Keys, Send text, Switch app, Task View, Show desktop, Esc, Enter, Copy, Paste, play/pause, volume, and Left / Right / Middle click (hold one and move with another finger to drag).
+- Choose your own buttons, up to five, and their order in Settings: Keys, Send text, Switch app, Task View, Show desktop, Esc, Enter, Copy, Paste, play/pause, volume, mute, and Left / Right / Middle click (hold one and move with another finger to drag).
 - Make your own buttons under Settings, Bottom bar, Your shortcuts. Each one presses a hotkey you pick on the PC, such as Alt+Space to open Flow Launcher or Raycast. It can also press several hotkeys one after another, like Ctrl+K then Ctrl+C, with a wait of up to a minute between any two: F12, half a second, then F8, say. While a button waits, it stays lit; tap it again to stop it. The keys you can pick are Ctrl, Alt, Shift and Win with any letter, number, F1–F24, symbol, number-pad, arrow, editing or media key. A modifier key can also be pressed on its own.
 - Give a button a name and an icon: one of the built-in icons, or a picture from your phone, such as the app's logo. A new button goes on the bar if there's room. Your buttons also appear at the start of the Shortcuts panel, so ones that don't fit on the bar are still a tap away.
+
+<p align="center">
+  <img src="images/phone-shortcut-editor.png" width="250" alt="Editing a shortcut named Launcher: it presses Alt+Space and has a rocket icon">
+</p>
+<p align="center"><em>A shortcut that opens a launcher with Alt+Space.</em></p>
 
 ### Keyboard
 
 - The phone keyboard types straight into the PC. Autocorrect is off and Backspace always reaches the PC.
 - A box above the phone keyboard shows what you type.
+- The phone keyboard closes when you press its Enter key, so the trackpad is back in reach. To type several lines, turn that off under Settings, Keyboard. Enter on a hardware keyboard never closes it.
 - Text is sent as Unicode, so accents, other scripts and emoji work whatever the PC's keyboard layout is.
 - Ctrl, Alt, Shift and Win latches: tap one for the next key, long-press to lock it.
 - Keys panel: Esc, Tab, arrows (hold to repeat), Home/End, PgUp/PgDn, Delete, F1–F12, media and volume keys.
@@ -67,6 +74,14 @@ Both apps offer System default, Light, Dark and OLED black. On the PC, the theme
 - **Revoke a phone**: click **Remove** next to it under *Paired phones*.
 - **Stop all control for a while**: click **Pause remote control** in the PC window. Phones also drop their media controls until you resume.
 
+## Updates
+
+Both apps look for a newer release on this repository's [releases page](https://github.com/mikep49/romcon/releases) and install it for you. Your settings and paired phones carry over.
+
+- **On the PC**, RomCon checks a few seconds after it starts. When there's a new version, a notification says so. Click it, or open the **Settings** tab, and click **Update to …**. RomCon downloads the new `RomCon.exe`, puts it in place of the old one and restarts. **Check for updates** on the Settings tab checks again. If RomCon can't change the folder it's in (for example a folder under `C:\Program Files` while it runs without administrator rights), it offers to open the download page instead.
+- **On the phone**, the app checks each time it opens. A new version shows a card on the home screen. Tap **Update**, or **Not now** to hide it until the app opens again. Settings, Updates, has the same and a **Check for updates** button. The app downloads the new APK and opens Android's installer on it. The first time, Android asks you to allow RomCon to install apps.
+- [Obtainium](https://obtainium.imranr.dev/) works as well, if you'd rather it kept the phone app up to date.
+
 ## Tailscale
 
 Install Tailscale on both devices and sign them in to the same tailnet. On the phone, add the PC by its Tailscale IP (`100.x.y.z`) or MagicDNS name. Nothing else is needed: Tailscale already encrypts the link, and RomCon adds its own TLS and pairing on top. Broadcast discovery doesn't cross Tailscale, which is why you add the PC by address.
@@ -79,6 +94,7 @@ If the phone can't reach the PC over Tailscale, check that Windows Firewall allo
 - **Encrypted.** All TCP traffic is TLS 1.2, and pointer movement sent over UDP is AES-256-GCM with a key the PC issues over that TLS connection. The PC makes its own certificate on first run (stored DPAPI-encrypted in `%APPDATA%\RomCon`). The phone pins that certificate when pairing and refuses any other, so a device impersonating the PC never sees your keystrokes. The matching *PC code* on both screens guards the first pairing.
 - **Administrator rights.** With *Always run as administrator* and *Start with Windows* both on, RomCon gets full rights at every sign-in without a prompt. Keep `RomCon.exe` in a folder only administrators can change, such as one under `C:\Program Files`, so another program can't swap it out first.
 - **Revocable.** Each phone gets its own random token. The PC stores only a hash of it, and removing the phone on the PC revokes it at once. Tokens are kept in the app's private storage and excluded from Android backups.
+- **Updates.** Both apps only ever ask GitHub about this repository's latest release, over HTTPS. A download whose SHA-256 doesn't match the one GitHub lists for that file is thrown away. Android also refuses an update that isn't signed with the same key as the installed app.
 
 ## Limitations
 
@@ -89,6 +105,15 @@ These are Windows rules, not bugs.
 - Some games read raw hardware input and may ignore injected mouse or keyboard events.
 
 ## Development
+
+### Building
+
+- **Windows app**: run `windows\build.ps1`. It compiles `windows\bin\RomCon.exe` against the .NET Framework 4.8 that comes with Windows, so it needs only a C# compiler: Visual Studio or its Build Tools with the C# workload, or the .NET SDK.
+- **Android app**: `cd android`, then `.\gradlew.bat assembleDebug`. It needs JDK 21 or newer (Android Studio's bundled one works) and the Android SDK. `assembleRelease` signs with the key described in `~/.romcon/keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`; `ROMCON_KEYSTORE_PROPERTIES` points elsewhere), or with the debug key if there's no such file.
+
+### Releases
+
+Tag a release `v<version>`, matching `versionName` in `android/app/build.gradle.kts` (raise `versionCode` too) and the assembly version in `windows/src/Program.cs`. Attach the two apps named exactly `RomCon.exe` and `RomCon.apk`: the README's download links, Obtainium and the apps' own updaters all look for those names on the latest release. Every APK must be signed with the same key, or Android won't install it over the previous one.
 
 ### Ports
 
