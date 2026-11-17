@@ -23,7 +23,7 @@ RomCon is two small apps:
 
 ## What it does
 
-- **Trackpad.** Move, tap to click, two-finger scroll, and double-tap and drag, like a laptop touchpad.
+- **Trackpad.** Move, tap to click, two-finger scroll, and double-tap and drag, like a laptop touchpad, with clicks you can feel.
 - **Keyboard.** The phone keyboard types straight into the PC, in any language, emoji included. There are Ctrl, Alt, Shift and Win keys, arrows, F-keys and common shortcuts.
 - **Media and system.** Play/pause, volume, switch app, show desktop and lock the PC.
 - **Media controls on the lock screen.** While the PC is playing something, the phone shows what it is, with play/pause, skip and the PC's volume, without unlocking it or opening the app.

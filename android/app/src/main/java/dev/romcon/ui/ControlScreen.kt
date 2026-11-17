@@ -1,6 +1,5 @@
 package dev.romcon.ui
 
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -105,6 +104,7 @@ import dev.romcon.AppViewModel
 import dev.romcon.ConnState
 import dev.romcon.data.BarButton
 import dev.romcon.data.CustomShortcut
+import dev.romcon.input.Feel
 import dev.romcon.input.Latch
 import dev.romcon.input.ModKey
 import dev.romcon.input.Vk
@@ -122,20 +122,12 @@ fun ControlScreen(vm: AppViewModel) {
     var keysTab by rememberSaveable { mutableIntStateOf(0) }
     var textDialog by rememberSaveable { mutableStateOf(false) }
     val imeVisible = WindowInsets.isImeVisible
-    val hapticsOn by rememberUpdatedState(settings.haptics)
 
     DisposableEffect(settings.keepScreenOn) {
         view.keepScreenOn = settings.keepScreenOn
         onDispose { view.keepScreenOn = false }
     }
 
-    val haptic: (Boolean) -> Unit = remember(view) {
-        { strong ->
-            if (hapticsOn) {
-                view.performHapticFeedback(if (strong) HapticFeedbackConstants.VIRTUAL_KEY else HapticFeedbackConstants.KEYBOARD_TAP)
-            }
-        }
-    }
     val actions = remember(vm) {
         object : PointerActions {
             override fun move(dx: Int, dy: Int) {
@@ -152,7 +144,7 @@ fun ControlScreen(vm: AppViewModel) {
 
             override fun click(button: Int) = vm.click(button)
 
-            override fun haptic(strong: Boolean) = haptic(strong)
+            override fun haptic(feel: Feel) = vm.feel(feel)
         }
     }
     val sink = remember(vm) {
@@ -186,7 +178,7 @@ fun ControlScreen(vm: AppViewModel) {
         }
 
         AnimatedVisibility(visible = keysOpen, enter = expandVertically(), exit = shrinkVertically()) {
-            KeysPanel(vm, settings.shortcuts, haptic, keysTab, { keysTab = it }, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
+            KeysPanel(vm, settings.shortcuts, keysTab, { keysTab = it }, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
         }
 
         // Shortcuts and Keys open the same panel on different tabs; each is lit while its side of the panel shows.
@@ -221,17 +213,24 @@ fun ControlScreen(vm: AppViewModel) {
                     }
                     BarButton.SEND_TEXT -> textDialog = true
                     else -> {
-                        haptic(false)
+                        vm.feel(Feel.CLICK)
                         vm.press(button)
                     }
                 }
             },
             onShortcut = { shortcut ->
-                haptic(false)
+                vm.feel(Feel.CLICK)
                 vm.runShortcut(shortcut)
             },
+            // Felt going down and coming back up, like the buttons under a laptop's touchpad.
             onMouse = { button, down ->
-                if (down) haptic(false)
+                vm.feel(
+                    when {
+                        !down -> Feel.RELEASE
+                        button == Proto.BUTTON_LEFT -> Feel.CLICK
+                        else -> Feel.FIRM
+                    },
+                )
                 actions.button(button, down)
             },
         )
@@ -407,7 +406,6 @@ private class Cap(val label: String, val on: Boolean = false, val action: () -> 
 private fun KeysPanel(
     vm: AppViewModel,
     custom: List<CustomShortcut>,
-    haptic: (Boolean) -> Unit,
     tab: Int,
     onTab: (Int) -> Unit,
     modifier: Modifier,
@@ -435,8 +433,8 @@ private fun KeysPanel(
                         .height(40.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .combinedClickable(
-                            onClick = { haptic(false); vm.toggleLatch(mod) },
-                            onLongClick = { haptic(true); vm.lockLatch(mod) },
+                            onClick = { vm.feel(Feel.CLICK); vm.toggleLatch(mod) },
+                            onLongClick = { vm.feel(Feel.FIRM); vm.lockLatch(mod) },
                         ),
                 ) {
                     Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -470,7 +468,8 @@ private fun KeysPanel(
                 .verticalScroll(scroll),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            val key: (Int) -> () -> Unit = { vk -> { haptic(false); vm.key(vk) } }
+            val haptic = { vm.feel(Feel.CLICK) }
+            val key: (Int) -> () -> Unit = { vk -> { haptic(); vm.key(vk) } }
             when (tab) {
                 0 -> {
                     KeyRow {
@@ -519,9 +518,9 @@ private fun KeysPanel(
                 else -> {
                     // The user's own shortcuts come first, so ones that don't fit on the bar are still close at hand.
                     // One that's partway through its hotkeys is lit, and pressing it again stops it.
-                    val all = custom.map { sc -> Cap(sc.title, on = sc.id == vm.runningShortcut) { haptic(false); vm.runShortcut(sc) } } +
-                        Cap("Switch app") { haptic(false); vm.switchApp() } +
-                        shortcuts.map { sc -> Cap(sc.label) { haptic(false); vm.shortcut(sc.vk, sc.mods) } }
+                    val all = custom.map { sc -> Cap(sc.title, on = sc.id == vm.runningShortcut) { haptic(); vm.runShortcut(sc) } } +
+                        Cap("Switch app") { haptic(); vm.switchApp() } +
+                        shortcuts.map { sc -> Cap(sc.label) { haptic(); vm.shortcut(sc.vk, sc.mods) } }
                     all.chunked(4).forEach { row ->
                         KeyRow { m ->
                             row.forEach { cap -> KeyCap(cap.label, m, on = cap.on, onPress = cap.action) }

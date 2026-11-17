@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.edit
+import dev.romcon.input.Haptics
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -71,7 +72,12 @@ data class AppSettings(
     val typingPreview: Boolean = true,
     /** The phone keyboard closes after its Enter key, as after sending a message or a search. */
     val hideKeyboardOnEnter: Boolean = true,
+    /** The phone vibrates on clicks, drags and key presses, like a laptop's haptic touchpad. */
     val haptics: Boolean = true,
+    /** How strongly, in percent of what the phone's motor can do. */
+    val hapticIntensity: Int = Haptics.DEFAULT_INTENSITY,
+    /** A light tick for each mouse-wheel notch while sliding along the scroll bar. */
+    val scrollNotches: Boolean = true,
     val keepScreenOn: Boolean = true,
     /** A lock button on the control screen. Off by default: a locked PC can only be unlocked at the PC. */
     val lockButton: Boolean = false,
@@ -169,6 +175,8 @@ class Store(context: Context) {
             typingPreview = prefs.getBoolean("typingPreview", d.typingPreview),
             hideKeyboardOnEnter = prefs.getBoolean("hideKeyboardOnEnter", d.hideKeyboardOnEnter),
             haptics = prefs.getBoolean("haptics", d.haptics),
+            hapticIntensity = prefs.getInt("hapticIntensity", d.hapticIntensity).coerceIn(Haptics.MIN_INTENSITY, Haptics.MAX_INTENSITY),
+            scrollNotches = prefs.getBoolean("scrollNotches", d.scrollNotches),
             keepScreenOn = prefs.getBoolean("keepScreenOn", d.keepScreenOn),
             lockButton = prefs.getBoolean("lockButton", d.lockButton),
             transport = prefs.getString("transport", null)?.let { name -> Transport.entries.firstOrNull { it.name == name } } ?: d.transport,
@@ -194,6 +202,8 @@ class Store(context: Context) {
             putBoolean("typingPreview", s.typingPreview)
             putBoolean("hideKeyboardOnEnter", s.hideKeyboardOnEnter)
             putBoolean("haptics", s.haptics)
+            putInt("hapticIntensity", s.hapticIntensity)
+            putBoolean("scrollNotches", s.scrollNotches)
             putBoolean("keepScreenOn", s.keepScreenOn)
             putBoolean("lockButton", s.lockButton)
             putString("transport", s.transport.name)
