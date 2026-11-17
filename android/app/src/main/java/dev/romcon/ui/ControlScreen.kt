@@ -1,5 +1,6 @@
 package dev.romcon.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -123,6 +124,11 @@ fun ControlScreen(vm: AppViewModel) {
     var textDialog by rememberSaveable { mutableStateOf(false) }
     val imeVisible = WindowInsets.isImeVisible
 
+    val onBack: () -> Unit = {
+        if (keysOpen) keysOpen = false else vm.back()
+    }
+    BackHandler(enabled = keysOpen, onBack = onBack)
+
     DisposableEffect(settings.keepScreenOn) {
         view.keepScreenOn = settings.keepScreenOn
         onDispose { view.keepScreenOn = false }
@@ -161,7 +167,7 @@ fun ControlScreen(vm: AppViewModel) {
             .background(MaterialTheme.colorScheme.surface)
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
-        ControlTopBar(conn, vm, lockButton = settings.lockButton, onSendText = { textDialog = true })
+        ControlTopBar(conn, vm, lockButton = settings.lockButton, onBack = onBack, onSendText = { textDialog = true })
 
         Box(
             Modifier
@@ -250,7 +256,7 @@ fun ControlScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun ControlTopBar(conn: ConnState, vm: AppViewModel, lockButton: Boolean, onSendText: () -> Unit) {
+private fun ControlTopBar(conn: ConnState, vm: AppViewModel, lockButton: Boolean, onBack: () -> Unit, onSendText: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val (name, status, color) = when (conn) {
         is ConnState.Connected -> Triple(
@@ -267,7 +273,7 @@ private fun ControlTopBar(conn: ConnState, vm: AppViewModel, lockButton: Boolean
         ConnState.Idle -> Triple("RomCon", "Not connected", MaterialTheme.colorScheme.outline)
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = vm::disconnect) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Disconnect") }
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
