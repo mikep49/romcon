@@ -48,7 +48,7 @@ Everything the [README](../README.md) leaves out.
 
 ### Media controls on the lock screen
 
-- While a paired PC is playing something (a YouTube video, Spotify, any player Windows knows about), the phone shows media controls on its lock screen and with its notifications: the title and artwork, play/pause, a seek bar, skip where the player offers it, and the PC's volume.
+- While a paired PC is playing something (a YouTube video, Spotify, any player Windows knows about), the phone shows media controls on its lock screen and with its notifications: the title and artwork, play/pause, a seek bar, 10-second back and forward buttons, and the PC's volume. The 10-second buttons appear when the player supports seeking; otherwise, previous/next track buttons appear where supported. On older Android versions, expand the notification to see the volume buttons.
 - They appear when playback starts and go away when it stops. A paused player keeps them for 10 minutes, so you can resume.
 - While the PC is playing, the phone's volume buttons change the PC's volume. This can be turned off.
 - You don't need to open the app. After pairing, the phone stays connected to the PC in the background, also after a restart. That connection can't control the pointer or keyboard, and it sends nothing while nothing changes, so the phone can sleep.

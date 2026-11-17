@@ -15,6 +15,7 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import dev.romcon.MainActivity
 import dev.romcon.R
 import dev.romcon.net.MediaState
@@ -37,6 +38,8 @@ internal class PcMediaControls(private val context: Context, private val send: (
         const val ACTION_PAUSE = "dev.romcon.media.PAUSE"
         const val ACTION_NEXT = "dev.romcon.media.NEXT"
         const val ACTION_PREVIOUS = "dev.romcon.media.PREVIOUS"
+        const val ACTION_REWIND = "dev.romcon.media.REWIND"
+        const val ACTION_FAST_FORWARD = "dev.romcon.media.FAST_FORWARD"
         const val ACTION_VOLUME_DOWN = "dev.romcon.media.VOLUME_DOWN"
         const val ACTION_VOLUME_UP = "dev.romcon.media.VOLUME_UP"
         const val ACTION_DISMISSED = "dev.romcon.media.DISMISSED"
@@ -49,6 +52,8 @@ internal class PcMediaControls(private val context: Context, private val send: (
 
         /** Per step of the phone's volume buttons, which repeat while held. */
         private const val KEY_VOLUME_STEP = 2
+
+        private const val SEEK_STEP_MS = 10_000L
 
         fun createChannels(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java)
@@ -70,10 +75,14 @@ internal class PcMediaControls(private val context: Context, private val send: (
 
     private val session = MediaSession(context, "RomCon PC media")
     private var media = MediaState.NONE
+    private var receivedAt = 0L
     private var pcName = ""
     private var art: Bitmap? = null
     private var artId = 0
     private var remoteVolume: VolumeProvider? = null
+    private val seek = MediaSeek()
+
+    private val canSeek: Boolean get() = media.can(Proto.CAN_SEEK) && media.durationMs > 0
 
     init {
         session.setCallback(
@@ -82,7 +91,11 @@ internal class PcMediaControls(private val context: Context, private val send: (
                 override fun onPause() = send(Proto.MEDIA_PAUSE, 0)
                 override fun onSkipToNext() = send(Proto.MEDIA_NEXT, 0)
                 override fun onSkipToPrevious() = send(Proto.MEDIA_PREVIOUS, 0)
-                override fun onSeekTo(pos: Long) = send(Proto.MEDIA_SEEK_TO, pos.coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
+                override fun onSeekTo(pos: Long) {
+                    seek.seekTo(pos, SystemClock.elapsedRealtime())?.let { send(Proto.MEDIA_SEEK_TO, it) }
+                }
+                override fun onRewind() = seekBy(-SEEK_STEP_MS)
+                override fun onFastForward() = seekBy(SEEK_STEP_MS)
                 override fun onCustomAction(action: String, extras: Bundle?) {
                     handle(action)
                 }
@@ -98,6 +111,8 @@ internal class PcMediaControls(private val context: Context, private val send: (
             ACTION_PAUSE -> send(Proto.MEDIA_PAUSE, 0)
             ACTION_NEXT -> send(Proto.MEDIA_NEXT, 0)
             ACTION_PREVIOUS -> send(Proto.MEDIA_PREVIOUS, 0)
+            ACTION_REWIND -> seekBy(-SEEK_STEP_MS)
+            ACTION_FAST_FORWARD -> seekBy(SEEK_STEP_MS)
             ACTION_VOLUME_DOWN -> send(Proto.MEDIA_ADJUST_VOLUME, -BUTTON_VOLUME_STEP)
             ACTION_VOLUME_UP -> send(Proto.MEDIA_ADJUST_VOLUME, BUTTON_VOLUME_STEP)
             else -> return false
@@ -105,13 +120,20 @@ internal class PcMediaControls(private val context: Context, private val send: (
         return true
     }
 
+    private fun seekBy(deltaMs: Long) {
+        seek.seekBy(deltaMs, SystemClock.elapsedRealtime())?.let { send(Proto.MEDIA_SEEK_TO, it) }
+    }
+
     /**
      * Puts the controls up, or brings them up to date. [receivedAt] is when the PC's report arrived, in
      * [android.os.SystemClock.elapsedRealtime]; Android moves the position on from there by itself.
      */
     fun show(media: MediaState, pcName: String, receivedAt: Long, volumeKeys: Boolean) {
+        // Artwork and settings can redraw the same report; keep consecutive seeks in that case.
+        if (this.media != media || this.receivedAt != receivedAt) seek.update(media, receivedAt)
         this.media = media
         this.pcName = pcName
+        this.receivedAt = receivedAt
 
         val metadata = MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, title)
@@ -123,9 +145,12 @@ internal class PcMediaControls(private val context: Context, private val send: (
         var actions = PlaybackState.ACTION_PLAY_PAUSE
         if (media.can(Proto.CAN_PLAY)) actions = actions or PlaybackState.ACTION_PLAY
         if (media.can(Proto.CAN_PAUSE)) actions = actions or PlaybackState.ACTION_PAUSE
-        if (media.can(Proto.CAN_NEXT)) actions = actions or PlaybackState.ACTION_SKIP_TO_NEXT
-        if (media.can(Proto.CAN_PREVIOUS)) actions = actions or PlaybackState.ACTION_SKIP_TO_PREVIOUS
-        if (media.can(Proto.CAN_SEEK)) actions = actions or PlaybackState.ACTION_SEEK_TO
+        if (canSeek) {
+            actions = actions or PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_REWIND or PlaybackState.ACTION_FAST_FORWARD
+        } else {
+            if (media.can(Proto.CAN_NEXT)) actions = actions or PlaybackState.ACTION_SKIP_TO_NEXT
+            if (media.can(Proto.CAN_PREVIOUS)) actions = actions or PlaybackState.ACTION_SKIP_TO_PREVIOUS
+        }
         val state = PlaybackState.Builder()
             .setActions(actions)
             .setState(
@@ -134,8 +159,13 @@ internal class PcMediaControls(private val context: Context, private val send: (
                 if (media.playing) media.ratePercent / 100f else 0f,
                 receivedAt,
             )
+        // Android 13+ fills the previous/next slots with these custom actions when track skip isn't advertised.
+        // Keep the 10-second buttons first so they fit alongside play/pause and both volume buttons.
+        if (canSeek) {
+            state.addCustomAction(PlaybackState.CustomAction.Builder(ACTION_REWIND, "Back 10 seconds", R.drawable.ic_media_replay_10).build())
+            state.addCustomAction(PlaybackState.CustomAction.Builder(ACTION_FAST_FORWARD, "Forward 10 seconds", R.drawable.ic_media_forward_10).build())
+        }
         if (media.can(Proto.CAN_VOLUME)) {
-            // From Android 13 the system draws the buttons from this list; before that, from the notification's actions.
             state.addCustomAction(PlaybackState.CustomAction.Builder(ACTION_VOLUME_DOWN, "PC volume down", R.drawable.ic_volume_down).build())
             state.addCustomAction(PlaybackState.CustomAction.Builder(ACTION_VOLUME_UP, "PC volume up", R.drawable.ic_volume_up).build())
         }
@@ -155,6 +185,8 @@ internal class PcMediaControls(private val context: Context, private val send: (
     fun hide() {
         if (!media.showing && !session.isActive) return
         media = MediaState.NONE
+        receivedAt = 0L
+        seek.update(MediaState.NONE, 0)
         session.isActive = false
         session.setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_NONE, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 0f).build())
     }
@@ -202,7 +234,7 @@ internal class PcMediaControls(private val context: Context, private val send: (
     private val currentArt: Bitmap? get() = art.takeIf { media.artId != 0 && media.artId == artId }
 
     /** What the notification shows; when this is unchanged, the notification needn't be posted again. */
-    fun notificationKey(): Any = listOf(title, artistLine, pcName, media.playing, media.can, currentArt)
+    fun notificationKey(): Any = listOf(title, artistLine, pcName, media.playing, media.can, canSeek, currentArt)
 
     fun notification(): Notification {
         val builder = Notification.Builder(context, CHANNEL_MEDIA)
@@ -220,7 +252,8 @@ internal class PcMediaControls(private val context: Context, private val send: (
             .setOngoing(media.playing)
         if (Build.VERSION.SDK_INT >= 31) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
 
-        val skip = media.can(Proto.CAN_PREVIOUS) && media.can(Proto.CAN_NEXT)
+        val skip = !canSeek && media.can(Proto.CAN_PREVIOUS) && media.can(Proto.CAN_NEXT)
+        val transport = canSeek || skip
         val volume = media.can(Proto.CAN_VOLUME)
         val compact = ArrayList<Int>(3)
         var count = 0
@@ -229,13 +262,15 @@ internal class PcMediaControls(private val context: Context, private val send: (
             if (inCompact) compact += count
             count++
         }
-        // The folded notification has room for three: the skip buttons if the player has both, otherwise volume.
-        if (media.can(Proto.CAN_PREVIOUS)) add(R.drawable.ic_media_previous, "Previous", ACTION_PREVIOUS, skip)
-        if (volume && !skip) add(R.drawable.ic_volume_down, "PC volume down", ACTION_VOLUME_DOWN, true)
+        // Older Android versions use these actions: back/play/forward in compact view, volume when expanded.
+        if (canSeek) add(R.drawable.ic_media_replay_10, "Back 10 seconds", ACTION_REWIND, true)
+        else if (media.can(Proto.CAN_PREVIOUS)) add(R.drawable.ic_media_previous, "Previous", ACTION_PREVIOUS, skip)
+        if (volume && !transport) add(R.drawable.ic_volume_down, "PC volume down", ACTION_VOLUME_DOWN, true)
         if (media.playing) add(R.drawable.ic_media_pause, "Pause", ACTION_PAUSE, true) else add(R.drawable.ic_media_play, "Play", ACTION_PLAY, true)
-        if (media.can(Proto.CAN_NEXT)) add(R.drawable.ic_media_next, "Next", ACTION_NEXT, skip)
-        if (volume && skip) add(R.drawable.ic_volume_down, "PC volume down", ACTION_VOLUME_DOWN, false)
-        if (volume) add(R.drawable.ic_volume_up, "PC volume up", ACTION_VOLUME_UP, !skip)
+        if (canSeek) add(R.drawable.ic_media_forward_10, "Forward 10 seconds", ACTION_FAST_FORWARD, true)
+        else if (media.can(Proto.CAN_NEXT)) add(R.drawable.ic_media_next, "Next", ACTION_NEXT, skip)
+        if (volume && transport) add(R.drawable.ic_volume_down, "PC volume down", ACTION_VOLUME_DOWN, false)
+        if (volume) add(R.drawable.ic_volume_up, "PC volume up", ACTION_VOLUME_UP, !transport)
 
         builder.style = Notification.MediaStyle()
             .setMediaSession(session.sessionToken)
