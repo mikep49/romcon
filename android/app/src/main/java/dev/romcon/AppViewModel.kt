@@ -16,6 +16,8 @@ import dev.romcon.data.SavedPc
 import dev.romcon.data.ShortcutImages
 import dev.romcon.data.Store
 import dev.romcon.data.Transport
+import dev.romcon.input.Feel
+import dev.romcon.input.Haptics
 import dev.romcon.input.Latch
 import dev.romcon.input.ModKey
 import dev.romcon.input.TypedLine
@@ -51,7 +53,7 @@ import kotlin.coroutines.resume
 enum class Screen { HOME, CONTROL, SETTINGS }
 
 /** A page inside Settings; the settings list itself is shown when none is open. */
-enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, BOTTOM_BAR, SHORTCUT, MEDIA, CONNECTION, GENERAL }
+enum class SettingsPage { APPEARANCE, MOUSE, KEYBOARD, HAPTICS, BOTTOM_BAR, SHORTCUT, MEDIA, CONNECTION, GENERAL }
 
 /** A custom shortcut being made or changed in Settings; [original] is the saved one, or null for a new one. */
 data class ShortcutDraft(val shortcut: CustomShortcut, val original: CustomShortcut?) {
@@ -134,6 +136,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** The id of the custom shortcut that's partway through its hotkeys, waiting to press the next one. */
     var runningShortcut by mutableStateOf<String?>(null)
         private set
+
+    /** The phone's vibration motor, for feeling clicks and keys. */
+    val haptics = Haptics(app)
 
     /** This app's version, as in the release tags. */
     val appVersion: String = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "0"
@@ -474,6 +479,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (!_settings.value.typingPreview) typed = TypedLine.EMPTY
         val udp = _settings.value.transport == Transport.UDP
         session?.let { if (it.preferUdp != udp) it.preferUdp = udp }
+    }
+
+    /** Vibrates with [feel] at the strength chosen in Settings, unless haptics are off. */
+    fun feel(feel: Feel) {
+        val s = _settings.value
+        if (s.haptics) haptics.play(feel, s.hapticIntensity)
+    }
+
+    /** Sets how strongly the phone vibrates, and clicks at the new strength so it can be felt while choosing. */
+    fun setHapticIntensity(percent: Int) {
+        val p = percent.coerceIn(Haptics.MIN_INTENSITY, Haptics.MAX_INTENSITY)
+        if (p == _settings.value.hapticIntensity) return
+        updateSettings { it.copy(hapticIntensity = p) }
+        feel(Feel.CLICK)
     }
 
     // ---------- Custom shortcuts ----------

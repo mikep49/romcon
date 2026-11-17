@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import dev.romcon.data.AppSettings
+import dev.romcon.input.Feel
 import dev.romcon.net.Proto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -57,7 +58,7 @@ interface PointerActions {
     fun scroll(vertical: Int, horizontal: Int)
     fun button(button: Int, down: Boolean)
     fun click(button: Int)
-    fun haptic(strong: Boolean)
+    fun haptic(feel: Feel)
 }
 
 private const val TAP_MAX_MS = 250L
@@ -68,6 +69,9 @@ private const val BASE_GAIN = 1.6f
 
 /** Wheel units per dp of finger travel, two fingers on the pad or one on the scroll bar; Windows treats 120 units as one notch. */
 private const val SCROLL_GAIN = 3f
+
+/** Wheel units in one notch of a mouse wheel. */
+private const val WHEEL_NOTCH = 120
 
 /** Momentum scrolling never starts faster than this, in dp per second. */
 private const val MAX_FLING = 4000f
@@ -102,17 +106,21 @@ private class TrackpadMotion {
         if (ix != 0 || iy != 0) actions.move(ix, iy)
     }
 
-    /** [direction] is 1 when the content should follow the finger and -1 when it should move the other way. */
-    fun scroll(dxDp: Float, dyDp: Float, direction: Float, s: AppSettings, actions: PointerActions) {
+    /**
+     * [direction] is 1 when the content should follow the finger and -1 when it should move the other way.
+     * Returns the vertical wheel units sent.
+     */
+    fun scroll(dxDp: Float, dyDp: Float, direction: Float, s: AppSettings, actions: PointerActions): Int {
         val k = SCROLL_GAIN * s.scrollSpeed * direction
         remV += dyDp * k
         remH -= dxDp * k
-        val step = if (s.smoothScroll) 1 else 120
+        val step = if (s.smoothScroll) 1 else WHEEL_NOTCH
         val v = (remV / step).toInt() * step
         val h = (remH / step).toInt() * step
         remV -= v
         remH -= h
         if (v != 0 || h != 0) actions.scroll(v, h)
+        return v
     }
 
     fun resetScroll() {
@@ -220,6 +228,8 @@ private suspend fun PointerInputScope.scrollBarGestures(
         var travel = 0f
         var moving = false
         var total = 0f
+        // Wheel units scrolled since the last notch, either way: the bar ticks like a mouse wheel as it turns.
+        var sinceNotch = 0
         var lastTime = down.uptimeMillis
         var upTime = lastTime
         val velocity = VelocityTracker()
@@ -242,7 +252,11 @@ private suspend fun PointerInputScope.scrollBarGestures(
                 val dyDp = dy / density
                 total += dyDp
                 velocity.addPosition(upTime, Offset(0f, total))
-                motion.scroll(0f, dyDp, s.barDirection, s, a)
+                sinceNotch += abs(motion.scroll(0f, dyDp, s.barDirection, s, a))
+                if (sinceNotch >= WHEEL_NOTCH) {
+                    sinceNotch %= WHEEL_NOTCH
+                    if (s.scrollNotches) a.haptic(Feel.NOTCH)
+                }
             }
         } finally {
             onTouched(false)
@@ -334,8 +348,9 @@ private suspend fun PointerInputScope.trackpadGestures(
                     motion.scroll(if (axis == Axis.VERTICAL) 0f else dxDp, if (axis == Axis.HORIZONTAL) 0f else dyDp, s.padDirection, s, a)
                 } else if (maxPointers == 1 || dragging) {
                     if (dragCandidate && !dragging) {
+                        // The button goes down as the drag starts, and is felt going down, like pressing a touchpad.
                         a.button(Proto.BUTTON_LEFT, true)
-                        a.haptic(true)
+                        a.haptic(Feel.CLICK)
                         dragging = true
                     }
                     motion.pointer(dxDp, dyDp, dt, s, a)
@@ -347,23 +362,24 @@ private suspend fun PointerInputScope.trackpadGestures(
 
         val quick = upTime - downTime < TAP_MAX_MS
         when {
-            dragging -> Unit
+            // Lifting the finger lets go of the button, which feels lighter than pressing it.
+            dragging -> a.haptic(Feel.RELEASE)
             !moving && quick && s.tapToClick -> {
                 when (maxPointers) {
                     1 -> {
                         a.click(Proto.BUTTON_LEFT)
-                        a.haptic(false)
+                        a.haptic(Feel.CLICK)
                         // A tap that was itself the second of a double tap doesn't start another one.
                         motion.lastTapUp = if (dragCandidate) 0L else upTime
                         motion.lastTapPos = down.position
                     }
                     2 -> {
                         a.click(Proto.BUTTON_RIGHT)
-                        a.haptic(true)
+                        a.haptic(Feel.FIRM)
                     }
                     else -> {
                         a.click(Proto.BUTTON_MIDDLE)
-                        a.haptic(true)
+                        a.haptic(Feel.FIRM)
                     }
                 }
             }

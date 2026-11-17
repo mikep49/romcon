@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -78,10 +79,13 @@ import dev.romcon.data.BarButton
 import dev.romcon.data.BarItem
 import dev.romcon.data.ThemeMode
 import dev.romcon.data.Transport
+import dev.romcon.input.Feel
+import dev.romcon.input.Haptics
 import dev.romcon.media.LinkStatus
 import dev.romcon.media.MediaLink
 import dev.romcon.update.UpdateStage
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,6 +116,7 @@ fun SettingsScreen(vm: AppViewModel) {
                     SettingsPage.APPEARANCE -> AppearanceSettings(vm, s)
                     SettingsPage.MOUSE -> MouseSettings(vm, s)
                     SettingsPage.KEYBOARD -> KeyboardSettings(vm, s)
+                    SettingsPage.HAPTICS -> HapticsSettings(vm, s)
                     SettingsPage.BOTTOM_BAR -> BottomBarSettings(vm, s)
                     SettingsPage.SHORTCUT -> ShortcutEditor(vm, s)
                     SettingsPage.MEDIA -> MediaSettings(vm, s)
@@ -129,6 +134,7 @@ private val SettingsPage.title: String
         SettingsPage.APPEARANCE -> "Appearance"
         SettingsPage.MOUSE -> "Mouse"
         SettingsPage.KEYBOARD -> "Keyboard"
+        SettingsPage.HAPTICS -> "Haptics"
         SettingsPage.BOTTOM_BAR -> "Bottom bar"
         SettingsPage.SHORTCUT -> "Shortcut"
         SettingsPage.MEDIA -> "Media controls"
@@ -149,6 +155,15 @@ private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
     PageLink(Icons.Filled.Palette, "Appearance", "Theme: ${s.theme.label}") { vm.openSettingsPage(SettingsPage.APPEARANCE) }
     PageLink(Icons.Filled.Mouse, "Mouse", "Pointer speed, scrolling, tap to click") { vm.openSettingsPage(SettingsPage.MOUSE) }
     PageLink(Icons.Filled.Keyboard, "Keyboard", "Modifier keys and typing") { vm.openSettingsPage(SettingsPage.KEYBOARD) }
+    PageLink(
+        Icons.Filled.Vibration,
+        "Haptics",
+        when {
+            !vm.haptics.available -> "Not on this phone"
+            s.haptics -> "Intensity ${s.hapticIntensity}%"
+            else -> "Off"
+        },
+    ) { vm.openSettingsPage(SettingsPage.HAPTICS) }
     PageLink(Icons.Filled.TouchApp, "Bottom bar", s.bottomBar.joinToString(", ") { s.titleOf(it) }) { vm.openSettingsPage(SettingsPage.BOTTOM_BAR) }
     PageLink(
         Icons.Filled.PlayCircle,
@@ -156,7 +171,7 @@ private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
         if (s.lockScreenMedia) "On the lock screen" else "Off",
     ) { vm.openSettingsPage(SettingsPage.MEDIA) }
     PageLink(Icons.Filled.SwapVert, "Connection", "Pointer movement over ${s.transport.name}") { vm.openSettingsPage(SettingsPage.CONNECTION) }
-    PageLink(Icons.Filled.Tune, "General", "Vibration, keep screen on, lock button") { vm.openSettingsPage(SettingsPage.GENERAL) }
+    PageLink(Icons.Filled.Tune, "General", "Keep screen on, lock button") { vm.openSettingsPage(SettingsPage.GENERAL) }
 
     Section("Updates")
     UpdateSettings(vm)
@@ -261,6 +276,61 @@ private fun KeyboardSettings(vm: AppViewModel, s: AppSettings) {
 
     Section("Modifier keys")
     Help("Tap Ctrl, Alt, Shift or Win to use it with the next key, like Ctrl then C to copy. Long-press to keep it on.")
+}
+
+@Composable
+private fun HapticsSettings(vm: AppViewModel, s: AppSettings) {
+    if (!vm.haptics.available) {
+        Help("This phone can't vibrate.")
+        return
+    }
+    SwitchSetting("Haptic feedback", "Feel clicks, drags and key presses", s.haptics) { v ->
+        vm.updateSettings { it.copy(haptics = v) }
+        vm.feel(Feel.CLICK)
+    }
+    if (!s.haptics) return
+
+    // Steps of 10%, each clicking at its new strength, so it can be chosen by feel.
+    SliderSetting(
+        "Intensity",
+        s.hapticIntensity.toFloat(),
+        Haptics.MIN_INTENSITY.toFloat()..Haptics.MAX_INTENSITY.toFloat(),
+        "%.0f%%",
+        steps = (Haptics.MAX_INTENSITY - Haptics.MIN_INTENSITY) / 10 - 1,
+    ) { v -> vm.setHapticIntensity((v / 10).roundToInt() * 10) }
+    if (s.scrollBar) {
+        SwitchSetting("Scroll bar notches", "A light tick as you scroll, like a mouse wheel", s.scrollNotches) { v ->
+            vm.updateSettings { it.copy(scrollNotches = v) }
+            vm.feel(Feel.NOTCH)
+        }
+    }
+    TouchFeedbackNote(vm.haptics)
+
+    Section("What you feel")
+    Help(
+        "Tap: a click\n" +
+            "Two- or three-finger tap: a firmer click\n" +
+            "Drag: a click as it starts, a lighter one as you let go\n" +
+            "Keys and buttons: a click",
+    )
+}
+
+/** From Android 13, turning off Android's own touch feedback silences every app's, RomCon's included. */
+@Composable
+private fun TouchFeedbackNote(haptics: Haptics) {
+    val context = LocalContext.current
+    var silenced by remember { mutableStateOf(haptics.silencedBySystem()) }
+    // The user may come back from Android's settings having turned it on.
+    LifecycleResumeEffect(Unit) {
+        silenced = haptics.silencedBySystem()
+        onPauseOrDispose { }
+    }
+    if (!silenced) return
+    Spacer(Modifier.padding(top = 8.dp))
+    Help("Touch feedback is off in Android's settings, so the phone won't vibrate. Turn it on under Sound & vibration.")
+    TextButton(
+        onClick = { context.startActivity(Intent(Settings.ACTION_SOUND_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+    ) { Text("Open sound settings") }
 }
 
 @Composable
@@ -478,7 +548,6 @@ private fun ConnectionSettings(vm: AppViewModel, s: AppSettings) {
 
 @Composable
 private fun GeneralSettings(vm: AppViewModel, s: AppSettings) {
-    SwitchSetting("Vibrate on clicks and keys", null, s.haptics) { v -> vm.updateSettings { it.copy(haptics = v) } }
     SwitchSetting("Keep screen on", null, s.keepScreenOn) { v -> vm.updateSettings { it.copy(keepScreenOn = v) } }
     SwitchSetting("Lock PC button", null, s.lockButton) { v -> vm.updateSettings { it.copy(lockButton = v) } }
 }
@@ -548,13 +617,20 @@ internal fun Section(title: String) {
 }
 
 @Composable
-private fun SliderSetting(title: String, value: Float, range: ClosedFloatingPointRange<Float>, format: String, onChange: (Float) -> Unit) {
+private fun SliderSetting(
+    title: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    format: String,
+    steps: Int = 0,
+    onChange: (Float) -> Unit,
+) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Text(String.format(Locale.ROOT, format, value), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Slider(value = value, onValueChange = onChange, valueRange = range)
+        Slider(value = value, onValueChange = onChange, valueRange = range, steps = steps)
     }
 }
 

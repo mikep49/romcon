@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Haptic clicks at a strength chosen in Settings, which Android's built-in touch feedback can't do. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Lock screen media controls: a foreground service stays connected to the PC to learn what it's playing. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
