@@ -70,3 +70,7 @@ Windows itself blocks a few things:
 
 - [Guide](docs/guide.md): all features, updates, Tailscale, security, and notes for developers.
 - [Protocol](docs/protocol.md): how the two apps talk to each other.
+
+## License
+
+RomCon is free software, released under the [GNU General Public License v3.0 or later](LICENSE).
