@@ -1,7 +1,9 @@
 package dev.romcon.media
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -51,6 +53,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * that is hidden from the lock screen and that the user can switch off.
  *
  * While the phone sleeps this costs next to nothing: nothing is sent until the PC has news, and that wakes the phone.
+ *
+ * Settings can limit how long it stays once the app is closed. It stops then, and starts again when the app is opened.
  */
 class MediaLinkService : Service() {
 
@@ -60,6 +64,10 @@ class MediaLinkService : Service() {
     private lateinit var controls: PcMediaControls
     private lateinit var notifications: NotificationManager
     private var loop: Job? = null
+    private var clock: Job? = null
+
+    /** When the alarm that stops the service is set for, by the wall clock. */
+    private var alarmAt: Long? = null
 
     // Main thread only.
     private var session: RemoteSession? = null
@@ -75,19 +83,17 @@ class MediaLinkService : Service() {
     private var destroyed = false
 
     private val screenOn = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            MediaLink.kicks.trySend(Unit)
-        }
+        override fun onReceive(context: Context, intent: Intent) = wake()
     }
 
     private val networkChanged = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
-            MediaLink.kicks.trySend(Unit)
-        }
+        override fun onAvailable(network: Network) = wake()
 
-        override fun onLost(network: Network) {
-            MediaLink.kicks.trySend(Unit)
-        }
+        override fun onLost(network: Network) = wake()
+    }
+
+    private val clockAlarm by lazy {
+        PendingIntent.getService(this, 0, Intent(this, MediaLinkService::class.java).setAction(ACTION_CLOCK), PendingIntent.FLAG_IMMUTABLE)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -105,6 +111,7 @@ class MediaLinkService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (val action = intent?.action) {
             null -> Unit
+            ACTION_CLOCK -> MediaLink.clock.trySend(Unit)
             PcMediaControls.ACTION_DISMISSED -> {
                 dismissed = true
                 render()
@@ -126,11 +133,14 @@ class MediaLinkService : Service() {
                 }
             }
         }
+        // Only once the notification is up: stopping before it would crash the app.
+        if (clock == null) clock = scope.launch { keepTime() }
         return START_STICKY
     }
 
     override fun onDestroy() {
         destroyed = true
+        wakeAt(null)
         scope.cancel()
         session?.close()
         session = null
@@ -139,6 +149,43 @@ class MediaLinkService : Service() {
         controls.release()
         MediaLink.status.value = LinkStatus.Off
         super.onDestroy()
+    }
+
+    // ---------- How long ----------
+
+    /** The screen came on or the network changed: check on the link, and on the time. */
+    private fun wake() {
+        MediaLink.clock.trySend(Unit)
+        MediaLink.kicks.trySend(Unit)
+    }
+
+    /** Stops the service once the app has been closed for as long as Settings allow. */
+    private suspend fun keepTime() {
+        while (true) {
+            val deadline = MediaLink.deadline(store)
+            val left = deadline?.let { it - System.currentTimeMillis() }
+            if (left != null && left <= 0) {
+                stopSelf()
+                return
+            }
+            wakeAt(deadline)
+            // Delays stop while the phone sleeps, so one long wait could end long after the deadline. Short ones, and
+            // a look each time the phone wakes up, keep to the clock.
+            if (left == null) {
+                MediaLink.clock.receive()
+            } else {
+                withTimeoutOrNull(left.coerceAtMost(CLOCK_MS)) { MediaLink.clock.receive() }
+            }
+        }
+    }
+
+    /** Has Android wake the phone at [at], by the wall clock, in case nothing else does by then; null cancels it. */
+    private fun wakeAt(at: Long?) {
+        if (at == alarmAt) return
+        alarmAt = at
+        val alarms = getSystemService(AlarmManager::class.java)
+        // Inexact, but that's fine here, and an exact alarm needs a permission the user would have to grant.
+        if (at == null) alarms.cancel(clockAlarm) else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, clockAlarm)
     }
 
     // ---------- Staying connected ----------
@@ -293,6 +340,11 @@ class MediaLinkService : Service() {
     /** Brings the media session and the notification in line with the current state. */
     private fun render() {
         if (destroyed) return
+        if (MediaLink.timeUp(store)) {
+            // The phone slept through the deadline and woke up for news from the PC. Show nothing: the clock stops the service.
+            MediaLink.clock.trySend(Unit)
+            return
+        }
         val pc = linked
         if (pc != null && media.showing && !dismissed) {
             controls.show(media, pc.name, receivedAt, volumeKeys)
@@ -345,5 +397,11 @@ class MediaLinkService : Service() {
         /** How long to wait before looking for the PC again, by the number of failures so far. */
         val RETRY_MS = longArrayOf(2_000, 5_000, 10_000, 20_000, 40_000, 60_000, 120_000, 300_000)
         const val PROBE_MS = 3_000L
+
+        /** How often to look at the clock while the app is closed and the time is limited. */
+        const val CLOCK_MS = 60_000L
+
+        /** The alarm that stops the service when the phone slept through its deadline. */
+        const val ACTION_CLOCK = "dev.romcon.media.CLOCK"
     }
 }

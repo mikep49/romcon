@@ -52,6 +52,7 @@ Everything the [README](../README.md) leaves out.
 - They appear when playback starts and go away when it stops. A paused player keeps them for 10 minutes, so you can resume.
 - While the PC is playing, the phone's volume buttons change the PC's volume. This can be turned off.
 - You don't need to open the app. After pairing, the phone stays connected to the PC in the background, also after a restart. That connection can't control the pointer or keyboard, and it sends nothing while nothing changes, so the phone can sleep.
+- To have it stop a while after you close the app, choose how long it stays (30 minutes to 8 hours) under Settings, Media controls. It starts again when you open the app. The default is no limit.
 - Android requires a notification for an app that stays connected like this. It's silent and never on the lock screen. To hide it, long-press it and turn it off.
 - The setting is under Settings, Media controls. Both apps need a version that has this; an older RomCon on the PC is left alone until you update it and connect to it once from the app.
 - With several paired PCs, the phone stays with one at a time: the most recently used one it can reach.

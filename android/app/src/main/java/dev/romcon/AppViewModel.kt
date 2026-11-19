@@ -442,6 +442,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Drop the connection while the app is in the background; the PC releases anything still held. */
     fun onBackground() {
+        MediaLink.appClosed(getApplication())
         if (screen == Screen.CONTROL || screen == Screen.SETTINGS) {
             val pc = when (val c = _conn.value) {
                 is ConnState.Connected -> c.pc
@@ -458,7 +459,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onForeground() {
         // Android lets the background media link start while the app is in front, so this is the moment to check on it.
-        MediaLink.sync(getApplication())
+        MediaLink.appOpened(getApplication())
         val pc = resumePc ?: return
         resumePc = null
         if (screen == Screen.CONTROL || screen == Screen.SETTINGS) {

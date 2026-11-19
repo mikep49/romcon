@@ -81,6 +81,7 @@ import dev.romcon.data.ThemeMode
 import dev.romcon.data.Transport
 import dev.romcon.input.Feel
 import dev.romcon.input.Haptics
+import dev.romcon.media.BackgroundLimit
 import dev.romcon.media.LinkStatus
 import dev.romcon.media.MediaLink
 import dev.romcon.update.UpdateStage
@@ -168,7 +169,11 @@ private fun SettingsHome(vm: AppViewModel, s: AppSettings) {
     PageLink(
         Icons.Filled.PlayCircle,
         "Media controls",
-        if (s.lockScreenMedia) "On the lock screen" else "Off",
+        when {
+            !s.lockScreenMedia -> "Off"
+            s.backgroundMinutes == BackgroundLimit.NONE -> "On the lock screen"
+            else -> "On the lock screen, up to ${BackgroundLimit.label(s.backgroundMinutes)} after you close the app"
+        },
     ) { vm.openSettingsPage(SettingsPage.MEDIA) }
     PageLink(Icons.Filled.SwapVert, "Connection", "Pointer movement over ${s.transport.name}") { vm.openSettingsPage(SettingsPage.CONNECTION) }
     PageLink(Icons.Filled.Tune, "General", "Keep screen on, lock button") { vm.openSettingsPage(SettingsPage.GENERAL) }
@@ -466,7 +471,17 @@ private fun MediaSettings(vm: AppViewModel, s: AppSettings) {
     }
 
     Section("In the background")
-    Help("RomCon stays connected to see what's playing. It uses very little battery.")
+    Help("RomCon stays connected to see what's playing, using very little battery. How long should it stay after you close the app?")
+    Column(Modifier.selectableGroup()) {
+        BackgroundLimit.CHOICES.forEach { minutes ->
+            RadioSetting(BackgroundLimit.label(minutes), null, selected = s.backgroundMinutes == minutes) {
+                vm.updateSettings { it.copy(backgroundMinutes = minutes) }
+            }
+        }
+    }
+    if (s.backgroundMinutes != BackgroundLimit.NONE) Help("Then it stops until you open RomCon again.")
+
+    Section("Notification")
     BackgroundNotificationNote()
 }
 
