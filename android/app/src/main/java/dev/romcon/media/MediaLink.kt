@@ -31,9 +31,15 @@ object MediaLink {
     /** Tells the running service to look again: settings or PCs changed, the screen came on, the network changed. */
     internal val kicks = Channel<Unit>(Channel.CONFLATED)
 
-    /** True if the setting is on and at least one paired PC could say what it's playing. */
+    /** Tells the running service to look at the time again: the app was opened or closed, or the phone woke up. */
+    internal val clock = Channel<Unit>(Channel.CONFLATED)
+
+    /** True while the app is on screen. Kept in memory only: when the process has just started, the app isn't open. */
+    @Volatile private var open = false
+
+    /** True if the setting is on, its time isn't up, and at least one paired PC could say what it's playing. */
     fun wanted(store: Store): Boolean {
-        if (!store.loadSettings().lockScreenMedia) return false
+        if (!store.loadSettings().lockScreenMedia || timeUp(store)) return false
         val without = store.pcsWithoutMedia()
         return store.loadPcs().any { it.fingerprint !in without }
     }
@@ -56,4 +62,37 @@ object MediaLink {
             app.stopService(service)
         }
     }
+
+    /** Call when the app comes to the front. While it's open, the link has no time limit, and it starts if it was stopped. */
+    fun appOpened(context: Context) {
+        open = true
+        Store(context.applicationContext).closedAt = 0
+        clock.trySend(Unit)
+        sync(context)
+    }
+
+    /** Call when the app leaves the screen. From then on, the link stays for as long as Settings allow. */
+    fun appClosed(context: Context) {
+        open = false
+        Store(context.applicationContext).closedAt = System.currentTimeMillis()
+        clock.trySend(Unit)
+    }
+
+    /** When the link must stop, by the wall clock, or null if it may stay: the app is open, or Settings set no limit. */
+    internal fun deadline(store: Store): Long? {
+        if (open) return null
+        val minutes = store.loadSettings().backgroundMinutes
+        if (minutes == BackgroundLimit.NONE) return null
+        val now = System.currentTimeMillis()
+        var closedAt = store.closedAt
+        // Not known if the phone restarted while the app was open, and later than now if the clock was set back.
+        if (closedAt <= 0 || closedAt > now) {
+            closedAt = now
+            store.closedAt = now
+        }
+        return BackgroundLimit.deadline(minutes, closedAt)
+    }
+
+    /** True once the app has been closed for as long as Settings allow the link to stay. */
+    internal fun timeUp(store: Store): Boolean = deadline(store)?.let { System.currentTimeMillis() >= it } ?: false
 }

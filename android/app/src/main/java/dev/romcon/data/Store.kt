@@ -5,6 +5,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.edit
 import dev.romcon.input.Haptics
+import dev.romcon.media.BackgroundLimit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -86,6 +87,8 @@ data class AppSettings(
     val lockScreenMedia: Boolean = true,
     /** While the PC plays, the phone's volume buttons change the PC's volume. */
     val volumeKeys: Boolean = true,
+    /** How long the media link stays connected after the app is closed, in minutes, or [BackgroundLimit.NONE]. */
+    val backgroundMinutes: Int = BackgroundLimit.NONE,
 ) {
     fun shortcut(id: String): CustomShortcut? = shortcuts.firstOrNull { it.id == id }
 
@@ -182,6 +185,7 @@ class Store(context: Context) {
             transport = prefs.getString("transport", null)?.let { name -> Transport.entries.firstOrNull { it.name == name } } ?: d.transport,
             lockScreenMedia = prefs.getBoolean("lockScreenMedia", d.lockScreenMedia),
             volumeKeys = prefs.getBoolean("volumeKeys", d.volumeKeys),
+            backgroundMinutes = prefs.getInt("backgroundMinutes", d.backgroundMinutes).takeIf { it in BackgroundLimit.CHOICES } ?: d.backgroundMinutes,
         )
     }
 
@@ -209,6 +213,7 @@ class Store(context: Context) {
             putString("transport", s.transport.name)
             putBoolean("lockScreenMedia", s.lockScreenMedia)
             putBoolean("volumeKeys", s.volumeKeys)
+            putInt("backgroundMinutes", s.backgroundMinutes)
         }
     }
 
@@ -253,6 +258,11 @@ class Store(context: Context) {
         }
         return array.toString()
     }
+
+    /** When the app last left the screen, by the wall clock; 0 while it's open. */
+    var closedAt: Long
+        get() = prefs.getLong("closedAt", 0)
+        set(value) = prefs.edit { putLong("closedAt", value) }
 
     /**
      * Fingerprints of paired PCs whose RomCon is too old to say what's playing. The background media link
