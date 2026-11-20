@@ -158,6 +158,22 @@ namespace RomCon
             if (!LockWorkStation()) Log.Info("Couldn't lock the PC (error " + Marshal.GetLastWin32Error() + ")");
         }
 
+        /// <summary>
+        /// Taps Windows' own volume up or down key [times] times, which also brings up its volume bar. False if
+        /// Windows refused the input.
+        /// </summary>
+        public static bool TapVolumeKey(bool up, int times)
+        {
+            ushort vk = up ? (ushort)0xAF : (ushort)0xAE;
+            var inputs = new INPUT[times * 2];
+            for (int i = 0; i < times; i++)
+            {
+                inputs[i * 2] = KeyInput(vk, true);
+                inputs[i * 2 + 1] = KeyInput(vk, false);
+            }
+            return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT))) == inputs.Length;
+        }
+
         static List<ushort> ModifierKeys(int mods)
         {
             var list = new List<ushort>(4);

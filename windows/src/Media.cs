@@ -559,17 +559,45 @@ namespace RomCon
             WithEndpoint(endpoint => Apply(endpoint, volume));
         }
 
+        /// <summary>
+        /// Uses Windows' own volume keys where it can, so Windows shows its volume bar as if the keys on the PC had
+        /// been pressed. They move in steps of 2, so [delta] is rounded to whole presses.
+        /// </summary>
         public static void Adjust(int delta)
         {
-            WithEndpoint(endpoint =>
+            int volume;
+            bool muted;
+            if (delta == 0 || !TryGet(out volume, out muted)) return;
+            if (muted)
             {
-                float level;
-                bool muted;
-                if (endpoint.GetMasterVolumeLevelScalar(out level) != 0) return false;
-                endpoint.GetMute(out muted);
-                // Turning a muted PC up starts from silence, as the volume keys do on a phone.
-                return Apply(endpoint, (muted && delta > 0 ? 0 : ToPercent(level)) + delta);
-            });
+                // A muted PC shows as 0 on the phone, as on a phone's own volume keys: turning it down leaves it
+                // muted, and turning it up starts from silence.
+                if (delta < 0) return;
+                Set(0); // stays muted
+                volume = 0;
+            }
+            int target = Math.Max(0, Math.Min(100, volume + delta));
+            if (target == volume && !muted) return;
+            if (InputInjector.TapVolumeKey(delta > 0, (Math.Abs(delta) + KeyStep - 1) / KeyStep) && ChangesFrom(volume, muted)) return;
+            // The keys don't reach Windows on its lock screen, for one. Set the volume without the bar there.
+            Set(target);
+        }
+
+        const int KeyStep = 2;
+        const int KeyWaitMs = 300;
+
+        /// <summary>Waits a moment for the volume keys to take effect. False if nothing changed.</summary>
+        static bool ChangesFrom(int volume, bool muted)
+        {
+            var clock = Stopwatch.StartNew();
+            while (clock.ElapsedMilliseconds < KeyWaitMs)
+            {
+                Thread.Sleep(15);
+                int now;
+                bool nowMuted;
+                if (TryGet(out now, out nowMuted) && (now != volume || nowMuted != muted)) return true;
+            }
+            return false;
         }
 
         static bool Apply(IAudioEndpointVolume endpoint, int volume)
