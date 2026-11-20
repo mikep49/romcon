@@ -280,7 +280,8 @@ namespace RomCon
                     Thread.Sleep(200);
                     continue;
                 }
-                new Thread(() => Serve(client)) { IsBackground = true, Name = "client" }.Start();
+                // Input goes into Windows on this thread, so it runs ahead of busy programs (see Program.KeepResponsive).
+                new Thread(() => Serve(client)) { IsBackground = true, Name = "client", Priority = ThreadPriority.Highest }.Start();
             }
         }
 
@@ -596,7 +597,7 @@ namespace RomCon
                     return;
                 }
             }
-            new Thread(PointerLoop) { IsBackground = true, Name = "pointer" }.Start();
+            new Thread(PointerLoop) { IsBackground = true, Name = "pointer", Priority = ThreadPriority.Highest }.Start();
         }
 
         UdpClient BindPointerSocket(AddressFamily family)

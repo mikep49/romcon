@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -111,6 +113,7 @@ namespace RomCon
                     var config = Config.Load(options.DataDir);
                     if (options.Port.HasValue) config.Port = options.Port.Value;
                     Log.Init(config.Dir);
+                    KeepResponsive();
 
                     // A RomCon that was already restarted for this never tries again, so it can't keep restarting itself.
                     if (config.AlwaysAdmin && !options.Restarted && !TrayApp.IsElevated)
@@ -161,6 +164,34 @@ namespace RomCon
         static SecurityIdentifier CurrentUser()
         {
             using (var id = WindowsIdentity.GetCurrent()) return id.User;
+        }
+
+        /// <summary>
+        /// Keeps the pointer from lagging while the PC is busy. RomCon spends nearly all its time waiting for the phone, so a higher
+        /// priority costs other programs nothing, but it lets a movement in from the phone go ahead of a busy app instead of
+        /// queueing behind it. Windows 11 also slows down a program whose window is hidden ("efficiency mode"), which RomCon,
+        /// living in the tray, usually is.
+        /// </summary>
+        static void KeepResponsive()
+        {
+            try
+            {
+                using (var self = Process.GetCurrentProcess()) self.PriorityClass = ProcessPriorityClass.AboveNormal;
+            }
+            catch (Exception ex)
+            {
+                Log.Info("Couldn't raise RomCon's priority: " + ex.Message);
+            }
+
+            var throttling = new Native.PROCESS_POWER_THROTTLING_STATE
+            {
+                Version = Native.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                ControlMask = Native.PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+                StateMask = 0, // controlled, and off: never throttle
+            };
+            // Fails on Windows 10 before 1709, which has no efficiency mode to opt out of.
+            Native.SetProcessInformation(Native.GetCurrentProcess(), Native.ProcessPowerThrottling, ref throttling,
+                Marshal.SizeOf(typeof(Native.PROCESS_POWER_THROTTLING_STATE)));
         }
 
         static string StableHash(string s)

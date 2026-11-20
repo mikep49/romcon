@@ -113,7 +113,8 @@ namespace RomCon
             {
                 watchers++;
                 if (thread != null) return;
-                thread = new Thread(Run) { IsBackground = true, Name = "media" };
+                // Background work that mustn't compete with the user's programs now RomCon itself runs above normal.
+                thread = new Thread(Run) { IsBackground = true, Name = "media", Priority = ThreadPriority.BelowNormal };
                 thread.SetApartmentState(ApartmentState.MTA);
                 thread.Start();
             }
