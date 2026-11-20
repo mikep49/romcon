@@ -122,7 +122,7 @@ MEDIA_COMMAND, phone to PC, is `u8 command`, `u32 value`:
 | 4 | Previous | unused |
 | 5 | Seek | position in milliseconds |
 | 6 | Set volume | 0..100 |
-| 7 | Adjust volume | change in percent, a two's-complement `i32`. Turning a muted PC up unmutes it. |
+| 7 | Adjust volume | change in percent, a two's-complement `i32`. Turning a muted PC up unmutes it from 0; turning it down leaves it muted. The PC may round the change to its own volume steps. |
 
 Playback commands go to the player the last MEDIA described. The PC doesn't answer a command; the result arrives as the next MEDIA.
 
