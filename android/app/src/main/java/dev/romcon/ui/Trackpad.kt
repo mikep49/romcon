@@ -3,7 +3,9 @@ package dev.romcon.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +15,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -57,6 +62,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import dev.romcon.data.AppSettings
 import dev.romcon.input.Feel
+import dev.romcon.net.Desktops
 import dev.romcon.net.Proto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -143,8 +149,15 @@ private class TrackpadMotion {
     }
 }
 
+/** With [AppSettings.desktopButtons] on and more than one of [desktops], buttons along the top call [onDesktop] with one's index. */
 @Composable
-fun Trackpad(settings: AppSettings, actions: PointerActions, modifier: Modifier = Modifier) {
+fun Trackpad(
+    settings: AppSettings,
+    actions: PointerActions,
+    modifier: Modifier = Modifier,
+    desktops: Desktops = Desktops.SINGLE,
+    onDesktop: (Int) -> Unit = {},
+) {
     val motion = remember { TrackpadMotion() }
     val scope = rememberCoroutineScope()
     val currentSettings = rememberUpdatedState(settings)
@@ -159,6 +172,9 @@ fun Trackpad(settings: AppSettings, actions: PointerActions, modifier: Modifier 
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape),
         ) {
+            if (settings.desktopButtons && desktops.count > 1) {
+                DesktopButtons(desktops, { currentActions.value }, onDesktop)
+            }
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -207,6 +223,54 @@ private fun BackForwardButtons(back: Boolean, forward: Boolean, actions: () -> P
         if (back && forward) VerticalDivider(color = line)
         if (forward) {
             SideButton("Forward", Icons.AutoMirrored.Filled.ArrowForward, Proto.BUTTON_FORWARD, actions, Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * A strip along the top of the trackpad with a numbered button for each of the PC's virtual desktops, the one showing
+ * picked out. They share the width; when more than fit, the strip scrolls sideways. Touches here never reach the trackpad.
+ */
+@Composable
+private fun DesktopButtons(desktops: Desktops, actions: () -> PointerActions, onDesktop: (Int) -> Unit) {
+    val line = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    BoxWithConstraints(Modifier.fillMaxWidth().height(48.dp)) {
+        val dividers = (desktops.count - 1).dp
+        val width = ((maxWidth - dividers) / desktops.count).coerceAtLeast(48.dp)
+        Row(Modifier.fillMaxHeight().horizontalScroll(rememberScrollState()).selectableGroup()) {
+            for (i in 0 until desktops.count) {
+                if (i > 0) VerticalDivider(color = line)
+                DesktopButton(i + 1, selected = i == desktops.current, Modifier.width(width)) {
+                    actions().haptic(Feel.CLICK)
+                    onDesktop(i)
+                }
+            }
+        }
+    }
+    HorizontalDivider(color = line)
+}
+
+@Composable
+private fun DesktopButton(number: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Box(
+        modifier
+            .fillMaxHeight()
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .semantics { contentDescription = "Desktop $number" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(width = 40.dp, height = 30.dp)
+                .background(if (selected) colors.secondaryContainer else Color.Transparent, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                number.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) colors.onSecondaryContainer else colors.onSurfaceVariant.copy(alpha = 0.7f),
+            )
         }
     }
 }

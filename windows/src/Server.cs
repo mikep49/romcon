@@ -140,6 +140,7 @@ namespace RomCon
         readonly X509Certificate2 certificate;
         readonly InputInjector injector;
         readonly MediaWatcher media;
+        readonly VirtualDesktops desktops;
         readonly List<ClientSession> sessions = new List<ClientSession>();
         readonly List<ClientSession> mediaLinks = new List<ClientSession>();
         readonly HashSet<string> mediaAnnounced = new HashSet<string>();
@@ -171,6 +172,8 @@ namespace RomCon
             VerifyCode = Identity.VerifyCode(Fingerprint);
             Pairing.Changed += () => Changed?.Invoke();
             media.Changed += PushMedia;
+            desktops = new VirtualDesktops(injector);
+            desktops.Changed += PushDesktops;
         }
 
         public int Port => config.Port;
@@ -372,7 +375,12 @@ namespace RomCon
                     else
                     {
                         session.Send(new FrameBuilder(Proto.Status).U8(paused ? 1 : 0).Build());
-                        lock (sessions) sessions.Add(session);
+                        lock (sessions)
+                        {
+                            sessions.Add(session);
+                            desktops.Watching = true;
+                        }
+                        SendDesktops(session, desktops.Current);
                         Log.Info(deviceName + " connected from " + address + ".");
                         Connected?.Invoke(session);
                         tcp.ReceiveTimeout = IdleTimeoutMs;
@@ -421,7 +429,11 @@ namespace RomCon
                         channel.Dispose();
                     }
                     session.Input.ReleaseAll();
-                    lock (sessions) sessions.Remove(session);
+                    lock (sessions)
+                    {
+                        sessions.Remove(session);
+                        desktops.Watching = sessions.Count > 0;
+                    }
                     Log.Info(session.DeviceName + " disconnected.");
                     Changed?.Invoke();
                 }
@@ -499,6 +511,9 @@ namespace RomCon
                 case Proto.Command:
                     if (f.U8() == Proto.CmdLock) injector.LockPc();
                     break;
+                case Proto.SwitchDesktop:
+                    desktops.SwitchTo(f.U8());
+                    break;
                 // Unknown types are ignored so newer phones can talk to older PCs.
             }
         }
@@ -508,6 +523,18 @@ namespace RomCon
             if (paused) return;
             if (type == Proto.MouseMove) injector.Move(a, b);
             else injector.Wheel(a, b);
+        }
+
+        // ---------- Virtual desktops ----------
+
+        void PushDesktops(DesktopState d)
+        {
+            foreach (var s in Sessions) SendDesktops(s, d);
+        }
+
+        static void SendDesktops(ClientSession s, DesktopState d)
+        {
+            s.Send(new FrameBuilder(Proto.Desktops).U8(d.Count).U8(d.Current).Build());
         }
 
         // ---------- Media links ----------

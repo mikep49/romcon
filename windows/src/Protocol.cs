@@ -26,6 +26,7 @@ namespace RomCon
         public const byte Key = 0x21;
         public const byte CharWithMods = 0x22;
         public const byte Command = 0x30;
+        public const byte SwitchDesktop = 0x31;
         public const byte MediaCommand = 0x40;
 
         // PC -> phone
@@ -37,6 +38,7 @@ namespace RomCon
         public const byte UdpPong = 0x86;
         public const byte Media = 0x87;
         public const byte MediaArt = 0x88;
+        public const byte Desktops = 0x89;
 
         // A datagram is [u32 channel id][u64 counter][AES-256-GCM ciphertext][16-byte tag].
         public const int UdpKeySize = 32;

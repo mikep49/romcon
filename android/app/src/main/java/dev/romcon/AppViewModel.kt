@@ -24,6 +24,7 @@ import dev.romcon.input.TypedLine
 import dev.romcon.input.Vk
 import dev.romcon.input.letterOrDigitVk
 import dev.romcon.media.MediaLink
+import dev.romcon.net.Desktops
 import dev.romcon.net.DiscoveredPc
 import dev.romcon.net.Discovery
 import dev.romcon.net.FailKind
@@ -63,8 +64,11 @@ data class ShortcutDraft(val shortcut: CustomShortcut, val original: CustomShort
 sealed interface ConnState {
     data object Idle : ConnState
     data class Connecting(val pc: SavedPc, val attempt: Int, val lastError: String?) : ConnState
-    /** [udp] is true while pointer movement is going over UDP; it starts on TCP and switches once the PC confirms. */
-    data class Connected(val pc: SavedPc, val pcPaused: Boolean, val udp: Boolean = false) : ConnState
+    /**
+     * [udp] is true while pointer movement is going over UDP; it starts on TCP and switches once the PC confirms.
+     * [desktops] are the PC's virtual desktops, as it last reported them.
+     */
+    data class Connected(val pc: SavedPc, val pcPaused: Boolean, val udp: Boolean = false, val desktops: Desktops = Desktops.SINGLE) : ConnState
 
     /** Needs the user: the PC forgot this phone, its identity changed, or versions don't match. */
     data class Failed(val pc: SavedPc, val kind: FailKind, val message: String) : ConnState
@@ -401,6 +405,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 _conn.update { if (it is ConnState.Connected) it.copy(pcPaused = pcPaused) else it }
             }
 
+            override fun onDesktops(desktops: Desktops) {
+                if (session === s) _conn.update { if (it is ConnState.Connected) it.copy(desktops = desktops) else it }
+            }
+
             override fun onUdp(active: Boolean) {
                 if (session === s) _conn.update { if (it is ConnState.Connected) it.copy(udp = active) else it }
             }
@@ -638,6 +646,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun click(button: Int) {
         button(button, true)
         button(button, false)
+    }
+
+    /** Shows the PC's virtual desktop [index] (0 is the first), marking it current straight away; the PC confirms once it's there. */
+    fun switchDesktop(index: Int) {
+        val s = session ?: return
+        s.switchDesktop(index)
+        _conn.update {
+            if (it is ConnState.Connected && index < it.desktops.count) it.copy(desktops = it.desktops.copy(current = index)) else it
+        }
     }
 
     fun lockPc() {

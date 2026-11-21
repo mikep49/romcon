@@ -27,6 +27,7 @@ object Proto {
     const val KEY = 0x21
     const val CHAR_WITH_MODS = 0x22
     const val COMMAND = 0x30
+    const val SWITCH_DESKTOP = 0x31
     const val MEDIA_COMMAND = 0x40
 
     // PC -> phone
@@ -38,6 +39,7 @@ object Proto {
     const val UDP_PONG = 0x86
     const val MEDIA = 0x87
     const val MEDIA_ART = 0x88
+    const val DESKTOPS = 0x89
 
     // A datagram is [u32 channel id][u64 counter][AES-256-GCM ciphertext][16-byte tag].
     const val UDP_KEY_SIZE = 32
@@ -212,6 +214,19 @@ data class MediaState(
             title = f.str(),
             artist = f.str(),
         )
+    }
+}
+
+/** The PC's virtual desktops, from a DESKTOPS frame: how many there are and which one is showing (0 is the first). */
+data class Desktops(val count: Int = 1, val current: Int = 0) {
+    companion object {
+        /** A PC with one desktop, or one too old to say. */
+        val SINGLE = Desktops()
+
+        fun parse(f: Frame): Desktops {
+            val count = f.u8().coerceAtLeast(1)
+            return Desktops(count, f.u8().coerceAtMost(count - 1))
+        }
     }
 }
 

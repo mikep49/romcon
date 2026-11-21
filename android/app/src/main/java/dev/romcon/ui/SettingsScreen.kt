@@ -249,6 +249,9 @@ private fun MouseSettings(vm: AppViewModel, s: AppSettings) {
     SwitchSetting("Forward button", "At the bottom of the trackpad, like a mouse's side button", s.forwardButton) { v ->
         vm.updateSettings { it.copy(forwardButton = v) }
     }
+    SwitchSetting("Desktop buttons", "At the top of the trackpad when the PC has more than one virtual desktop", s.desktopButtons) { v ->
+        vm.updateSettings { it.copy(desktopButtons = v) }
+    }
 
     Section("Scrolling")
     SliderSetting("Scroll speed", s.scrollSpeed, 0.3f..3f, "%.1f×") { v -> vm.updateSettings { it.copy(scrollSpeed = v) } }

@@ -61,6 +61,7 @@ Phone to PC:
 | `0x21` | KEY | `u16 virtualKey` (Windows VK code), `u8 action` (0 up, 1 down, 2 tap), `u8 mods` (tap only) |
 | `0x22` | CHAR_WITH_MODS | `u8 mods`, `u16 utf16char`: the PC finds the key for the character on its current layout and taps it with the modifiers |
 | `0x30` | COMMAND | `u8 command` (1 = lock the workstation) |
+| `0x31` | SWITCH_DESKTOP | `u8 index`: show that virtual desktop, 0 being the first |
 | `0x40` | MEDIA_COMMAND | `u8 command`, `u32 value`: see *Media link* |
 
 `mods` bits: 1 Ctrl, 2 Alt, 4 Shift, 8 Win.
@@ -75,8 +76,11 @@ PC to phone:
 | `0x86` | UDP_PONG | none. The PC received a PING by UDP. |
 | `0x87` | MEDIA | What's playing: see *Media link* |
 | `0x88` | MEDIA_ART | A piece of the artwork: see *Media link* |
+| `0x89` | DESKTOPS | `u8 count`, `u8 current` (0 is the first). The PC's virtual desktops, sent after STATUS and whenever one is added, removed or shown. A PC that predates it never sends it, and the phone takes that as one desktop. |
 
 Receivers ignore frame types they don't know, so either side can add messages without breaking the other.
+
+The PC reads its desktops from where Explorer keeps them in the registry and switches with Ctrl+Win+Left and Right, one desktop at a time, waiting for each before the next. While it's on its way it sends no DESKTOPS; once it gets there, or can't go any further, it sends one, even if nothing changed, so the phone that asked shows where the PC really is.
 
 The PC tracks buttons and keys each phone holds down (MOUSE_BUTTON, KEY down/up) and releases them when the connection ends.
 
