@@ -1,5 +1,6 @@
 package dev.romcon
 
+import dev.romcon.net.Desktops
 import dev.romcon.net.FrameBuilder
 import dev.romcon.net.MediaState
 import dev.romcon.net.Proto
@@ -99,6 +100,16 @@ class ProtocolTest {
         val f = readFrame(ByteArrayInputStream(FrameBuilder(Proto.MEDIA_COMMAND).u8(Proto.MEDIA_ADJUST_VOLUME).u32(-2).build()))!!
         assertEquals(Proto.MEDIA_ADJUST_VOLUME, f.u8())
         assertEquals(-2, f.u32())
+    }
+
+    @Test
+    fun desktopsFrameParses() {
+        fun parse(count: Int, current: Int) =
+            Desktops.parse(readFrame(ByteArrayInputStream(FrameBuilder(Proto.DESKTOPS).u8(count).u8(current).build()))!!)
+        assertEquals(Desktops(3, 1), parse(3, 1))
+        // A current desktop past the end, or no desktops at all, still gives something the trackpad can show.
+        assertEquals(Desktops(2, 1), parse(2, 7))
+        assertEquals(Desktops.SINGLE, parse(0, 0))
     }
 
     @Test

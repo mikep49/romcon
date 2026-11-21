@@ -109,6 +109,7 @@ import dev.romcon.input.Feel
 import dev.romcon.input.Latch
 import dev.romcon.input.ModKey
 import dev.romcon.input.Vk
+import dev.romcon.net.Desktops
 import dev.romcon.net.FailKind
 import dev.romcon.net.Proto
 
@@ -175,7 +176,8 @@ fun ControlScreen(vm: AppViewModel) {
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp),
         ) {
-            Trackpad(settings, actions, Modifier.fillMaxSize())
+            val desktops = (conn as? ConnState.Connected)?.desktops ?: Desktops.SINGLE
+            Trackpad(settings, actions, Modifier.fillMaxSize(), desktops = desktops, onDesktop = vm::switchDesktop)
             ConnectionOverlay(conn, vm, Modifier.align(Alignment.Center))
         }
 

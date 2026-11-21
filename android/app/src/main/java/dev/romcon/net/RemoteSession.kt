@@ -54,6 +54,9 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
         /** Pointer movement switched to UDP ([active]) or back to the TCP connection. */
         fun onUdp(active: Boolean) {}
 
+        /** The PC's virtual desktops changed: one was added or removed, or another is showing. */
+        fun onDesktops(desktops: Desktops) {}
+
         /** On a media link: what's playing on the PC changed. */
         fun onMedia(media: MediaState) {}
 
@@ -251,6 +254,9 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
     fun charWithMods(c: Char, mods: Int) = raw(FrameBuilder(Proto.CHAR_WITH_MODS).u8(mods).u16(c.code))
 
     fun command(command: Int) = raw(FrameBuilder(Proto.COMMAND).u8(command))
+
+    /** Shows the PC's virtual desktop [index] (0 is the first). A PC from before desktop switching ignores it. */
+    fun switchDesktop(index: Int) = raw(FrameBuilder(Proto.SWITCH_DESKTOP).u8(index))
 
     /** One of [Proto.MEDIA_PLAY] and its neighbours. The PC only carries these out on a media link. */
     fun mediaCommand(command: Int, value: Int = 0) = raw(FrameBuilder(Proto.MEDIA_COMMAND).u8(command).u32(value))
@@ -476,6 +482,7 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
                         lastUdpPong = System.nanoTime()
                         refreshUdp()
                     }
+                    Proto.DESKTOPS -> listener?.onDesktops(Desktops.parse(frame))
                     Proto.MEDIA -> listener?.onMedia(MediaState.parse(frame))
                     Proto.MEDIA_ART -> collectArt(frame)
                 }
