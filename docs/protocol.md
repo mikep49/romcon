@@ -15,6 +15,8 @@ ROMCON!1
 
 ## Control connection (TCP 50505, TLS)
 
+When the PC can't listen on its port (Windows reserves random blocks of ports above 49152 for Hyper-V, WSL and Docker, and one can cover 50505), it tries 45505, 46505 and 47505 in that order and keeps the first that works. A phone that can't reach a paired PC on its saved port tries those same ports, still pinning the PC's certificate, and saves the one that answers.
+
 The phone opens TCP, then TLS 1.2. The PC presents a self-signed RSA-2048 certificate. The phone doesn't validate it against any CA. Instead it compares the certificate's SHA-256 with the fingerprint it pinned at pairing, and refuses any other. The 8-character *PC code* shown while pairing is the first 8 hex digits of that fingerprint, uppercased and split 4+4.
 
 ### Frames

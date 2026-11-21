@@ -271,8 +271,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         pairJob = viewModelScope.launch {
             try {
                 // Look at the PC's certificate first so the user can compare codes before typing the PIN.
-                val fingerprint = withContext(Dispatchers.IO) { RemoteSession.open(host, port, knownFingerprint).use { it.fingerprint } }
-                _pairing.update { it?.copy(fingerprint = fingerprint, busy = false, error = null) }
+                val (fingerprint, foundPort) = withContext(Dispatchers.IO) {
+                    val opened = if (knownFingerprint != null) RemoteSession.openPaired(host, port, knownFingerprint) else RemoteSession.open(host, port, null)
+                    opened.use { it.fingerprint to it.port }
+                }
+                _pairing.update { it?.copy(port = foundPort, fingerprint = fingerprint, busy = false, error = null) }
             } catch (e: RemoteException) {
                 _pairing.update { it?.copy(busy = false, error = e.message) }
             }
@@ -363,9 +366,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val (host, port) = lanAddressFor(pc) ?: (pc.host to pc.port)
                 try {
                     s = withContext(Dispatchers.IO) {
-                        val opened = RemoteSession.open(host, port, pc.fingerprint)
+                        val opened = RemoteSession.openPaired(host, port, pc.fingerprint)
                         val welcome = opened.hello(deviceId, deviceName, Proto.AUTH_TOKEN, pc.token)
-                        pc = pc.copy(name = welcome.serverName.ifBlank { pc.name }, lastUsed = System.currentTimeMillis())
+                        pc = pc.copy(
+                            name = welcome.serverName.ifBlank { pc.name },
+                            // The PC moved to another port. A move found at a discovered address is followed by discovery instead.
+                            port = if (host == pc.host) opened.port else pc.port,
+                            lastUsed = System.currentTimeMillis(),
+                        )
                         mediaChanged = store.setMediaSupport(pc.fingerprint, welcome.media)
                         opened
                     }

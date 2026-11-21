@@ -239,7 +239,7 @@ class MediaLinkService : Service() {
                 val (host, port) = address
                 address = null
                 try {
-                    val s = RemoteSession.open(host, port, pc.fingerprint)
+                    val s = RemoteSession.openPaired(host, port, pc.fingerprint)
                     val welcome = s.hello(store.deviceId, store.deviceName, Proto.AUTH_TOKEN, pc.token, Proto.ROLE_MEDIA)
                     if (welcome.media) return pc.copy(name = welcome.serverName.ifBlank { pc.name }) to s
                     // An older RomCon on the PC, which took this for a control connection. Leave it alone from now on.

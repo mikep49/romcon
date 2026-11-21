@@ -27,6 +27,28 @@ class LiveServerTest {
     private val port = System.getenv("ROMCON_TEST_PORT")?.toIntOrNull() ?: Proto.DEFAULT_PORT
     private val pin = System.getenv("ROMCON_TEST_PIN")
 
+    /** Run against a PC on a fallback port: `RomCon.exe --dry-run --data-dir <dir> --port 45505`. */
+    @Test
+    fun findsPcThatMovedToFallbackPort() {
+        assumeTrue("set ROMCON_TEST_HOST and a ROMCON_TEST_PORT from Proto.FALLBACK_PORTS to run", host != null && port in Proto.FALLBACK_PORTS)
+        val fingerprint = RemoteSession.open(host!!, port, null).use { it.fingerprint }
+        val nothingThere = 1
+
+        // Saved with a port the PC no longer listens on: found on the fallback port, with the same certificate.
+        RemoteSession.openPaired(host, nothingThere, fingerprint).use {
+            assertEquals(port, it.port)
+            assertEquals(fingerprint, it.fingerprint)
+        }
+
+        // Any other certificate on a fallback port doesn't pass for the PC, and the failure reported is the saved port's.
+        try {
+            RemoteSession.openPaired(host, nothingThere, "0".repeat(64)).close()
+            fail("connected to a PC with another certificate")
+        } catch (e: RemoteException) {
+            assertEquals(FailKind.UNREACHABLE, e.kind)
+        }
+    }
+
     @Test
     fun pairsConnectsAndSendsInput() {
         assumeTrue("set ROMCON_TEST_HOST and ROMCON_TEST_PIN to run", host != null && pin != null)

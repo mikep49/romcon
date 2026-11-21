@@ -228,30 +228,67 @@ namespace RomCon
         public void Start()
         {
             running = true;
-            try
+            int wanted = config.Port;
+            // A port given on the command line is meant exactly; otherwise move rather than not start at all.
+            var ports = new List<int> { wanted };
+            if (!config.PortFromCommandLine) ports.AddRange(Proto.FallbackPorts.Where(p => p != wanted));
+            SocketException wantedFailure = null;
+            foreach (int port in ports)
             {
-                listener = new TcpListener(IPAddress.IPv6Any, config.Port);
-                listener.Server.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
-                listener.Start();
+                listener = Listen(port, out SocketException failure);
+                if (listener == null)
+                {
+                    if (port == wanted) wantedFailure = failure;
+                    continue;
+                }
+                if (port != wanted)
+                {
+                    // Kept from now on, so the PC stays where phones found it even once the old port is free again.
+                    Log.Info("Port " + wanted + " is unavailable (" + wantedFailure.Message + "). Moved to port " + port + ".");
+                    config.Port = port;
+                    try { config.SaveSettings(); } catch (Exception ex) { Log.Info("Couldn't save settings: " + ex.Message); }
+                }
+                break;
             }
-            catch (SocketException)
+            if (listener == null)
             {
-                try
-                {
-                    listener = new TcpListener(IPAddress.Any, config.Port);
-                    listener.Start();
-                }
-                catch (SocketException ex)
-                {
-                    StartError = "Port " + config.Port + " is unavailable: " + ex.Message;
-                    Log.Info(StartError);
-                    return;
-                }
+                StartError = "Port " + wanted + " is unavailable: " + wantedFailure.Message;
+                Log.Info(StartError);
+                return;
             }
             Log.Info("Listening on port " + config.Port + ".");
             new Thread(AcceptLoop) { IsBackground = true, Name = "accept" }.Start();
             StartPointerSocket();
             StartDiscovery();
+        }
+
+        /// <summary>A started listener on the port, over IPv6 and IPv4 where it can, or null with the reason in failure.</summary>
+        static TcpListener Listen(int port, out SocketException failure)
+        {
+            failure = null;
+            var dual = new TcpListener(IPAddress.IPv6Any, port);
+            try
+            {
+                dual.Server.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+                dual.Start();
+                return dual;
+            }
+            catch (SocketException)
+            {
+                dual.Stop();
+            }
+            var v4 = new TcpListener(IPAddress.Any, port);
+            try
+            {
+                v4.Start();
+                return v4;
+            }
+            catch (SocketException ex)
+            {
+                v4.Stop();
+                failure = ex;
+                return null;
+            }
         }
 
         public void Stop()

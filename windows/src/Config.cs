@@ -22,6 +22,8 @@ namespace RomCon
     {
         public readonly string Dir;
         public int Port = Proto.DefaultPort;
+        /// <summary>Set when --port overrides the saved port, which RomCon then neither moves nor saves.</summary>
+        public bool PortFromCommandLine;
         public string ServerName = Environment.MachineName;
         public bool NotifyOnConnect = true;
         public bool AlwaysAdmin;
