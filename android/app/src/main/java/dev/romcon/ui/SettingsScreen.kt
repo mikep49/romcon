@@ -243,6 +243,12 @@ private fun MouseSettings(vm: AppViewModel, s: AppSettings) {
     if (!s.tapToClick && BarItem.Builtin(BarButton.LEFT_CLICK) !in s.bottomBar) {
         Help("To click, add Left click to the bottom bar.")
     }
+    SwitchSetting("Back button", "At the bottom of the trackpad, like a mouse's side button", s.backButton) { v ->
+        vm.updateSettings { it.copy(backButton = v) }
+    }
+    SwitchSetting("Forward button", "At the bottom of the trackpad, like a mouse's side button", s.forwardButton) { v ->
+        vm.updateSettings { it.copy(forwardButton = v) }
+    }
 
     Section("Scrolling")
     SliderSetting("Scroll speed", s.scrollSpeed, 0.3f..3f, "%.1f×") { v -> vm.updateSettings { it.copy(scrollSpeed = v) } }
