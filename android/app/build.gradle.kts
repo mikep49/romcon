@@ -13,8 +13,8 @@ android {
         applicationId = "dev.romcon"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.4.0"
     }
 
     // Published APKs are signed with the key described by a properties file kept outside the repository
