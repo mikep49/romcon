@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mouse
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.TextFields
@@ -63,6 +64,7 @@ val BarButton.icon: ImageVector
         BarButton.WINDOWS -> Icons.Filled.Window
         BarButton.SHORTCUTS -> Icons.Filled.Bolt
         BarButton.KEYS -> Icons.Filled.Dialpad
+        BarButton.MEDIA -> Icons.Filled.MusicNote
         BarButton.SEND_TEXT -> Icons.Filled.TextFields
         BarButton.SWITCH_APP -> Icons.Filled.SwapHoriz
         BarButton.TASK_VIEW -> Icons.Filled.Layers

@@ -189,9 +189,10 @@ fun ControlScreen(vm: AppViewModel) {
             KeysPanel(vm, settings.shortcuts, keysTab, { keysTab = it }, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp))
         }
 
-        // Shortcuts and Keys open the same panel on different tabs; each is lit while its side of the panel shows.
+        // Shortcuts, Media and Keys open the same panel on different tabs; each is lit while its side of the panel shows.
         val onShortcuts = keysOpen && keysTab == SHORTCUTS_TAB
-        val onKeys = keysOpen && keysTab != SHORTCUTS_TAB
+        val onMedia = keysOpen && keysTab == MEDIA_TAB
+        val onKeys = keysOpen && !onShortcuts && !onMedia
         BottomBar(
             items = settings.bottomBar,
             shortcuts = settings.shortcuts,
@@ -200,6 +201,7 @@ fun ControlScreen(vm: AppViewModel) {
                 when (button) {
                     BarButton.KEYBOARD -> imeVisible
                     BarButton.SHORTCUTS -> onShortcuts
+                    BarButton.MEDIA -> onMedia
                     BarButton.KEYS -> onKeys
                     else -> false
                 }
@@ -213,10 +215,16 @@ fun ControlScreen(vm: AppViewModel) {
                         keysTab = SHORTCUTS_TAB
                         keysOpen = true
                     }
+                    BarButton.MEDIA -> if (onMedia) {
+                        keysOpen = false
+                    } else {
+                        keysTab = MEDIA_TAB
+                        keysOpen = true
+                    }
                     BarButton.KEYS -> if (onKeys) {
                         keysOpen = false
                     } else {
-                        if (keysTab == SHORTCUTS_TAB) keysTab = 0
+                        if (keysTab == SHORTCUTS_TAB || keysTab == MEDIA_TAB) keysTab = 0
                         keysOpen = true
                     }
                     BarButton.SEND_TEXT -> textDialog = true
@@ -385,6 +393,7 @@ private val shortcuts = listOf(
 )
 
 private val keysTabs = listOf("Keys", "F1–F12", "Media", "Shortcuts")
+private const val MEDIA_TAB = 2
 private const val SHORTCUTS_TAB = 3
 
 /** Bottom-bar buttons that press a key or a shortcut on the PC; the rest are handled by the screen itself. */
@@ -511,7 +520,7 @@ private fun KeysPanel(
                 1 -> (1..12).chunked(6).forEach { row ->
                     KeyRow { m -> row.forEach { n -> KeyCap("F$n", m, onPress = key(Vk.f(n))) } }
                 }
-                2 -> {
+                MEDIA_TAB -> {
                     KeyRow {
                         KeyCap("Previous track", it, icon = Icons.Filled.SkipPrevious, onPress = key(Vk.MEDIA_PREV))
                         KeyCap("Play or pause", it, icon = Icons.Filled.PlayArrow, onPress = key(Vk.MEDIA_PLAY_PAUSE))

@@ -39,6 +39,7 @@ enum class BarButton(val label: String, val title: String, val summary: String? 
     WINDOWS("Windows", "Windows key"),
     SHORTCUTS("Shortcuts", "Shortcuts", "Copy, paste, undo and more"),
     KEYS("Keys", "Keys", "Esc, Tab, arrows, F1–F12"),
+    MEDIA("Media", "Media", "Play, skip tracks and volume"),
     SEND_TEXT("Send text", "Send text", "Write on the phone, send it in one go"),
     SWITCH_APP("Switch app", "Switch app", "Alt+Tab"),
     TASK_VIEW("Task view", "Task view", "Win+Tab"),

@@ -27,7 +27,7 @@ Everything the [README](../README.md) leaves out.
 ### Bottom bar
 
 - Keyboard, Windows key and Shortcuts sit under the pad by default.
-- Choose your own buttons, up to five, and their order in Settings: Keys, Send text, Switch app, Task View, Show desktop, Esc, Enter, Copy, Paste, play/pause, volume, mute, and Left / Right / Middle click (hold one and move with another finger to drag).
+- Choose your own buttons, up to five, and their order in Settings: Keys, Media (opens the panel on its play, skip and volume keys), Send text, Switch app, Task View, Show desktop, Esc, Enter, Copy, Paste, play/pause, volume, mute, and Left / Right / Middle click (hold one and move with another finger to drag).
 - Make your own buttons under Settings, Bottom bar, Your shortcuts. Each one presses a hotkey you pick on the PC, such as Alt+Space to open Flow Launcher or Raycast. It can also press several hotkeys one after another, like Ctrl+K then Ctrl+C, with a wait of up to a minute between any two: F12, half a second, then F8, say. While a button waits, it stays lit; tap it again to stop it. The keys you can pick are Ctrl, Alt, Shift and Win with any letter, number, F1–F24, symbol, number-pad, arrow, editing or media key. A modifier key can also be pressed on its own.
 - Give a button a name and an icon: one of the built-in icons, or a picture from your phone, such as the app's logo. A new button goes on the bar if there's room. Your buttons also appear at the start of the Shortcuts panel, so ones that don't fit on the bar are still a tap away.
 
