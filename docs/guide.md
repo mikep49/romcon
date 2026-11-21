@@ -19,6 +19,7 @@ Everything the [README](../README.md) leaves out.
 - Two-finger scroll, vertical and horizontal, with momentum and a natural/traditional switch.
 - Double-tap and drag to drag (selecting text, moving windows), like a laptop touchpad.
 - A scroll bar down the right side of the pad: slide one finger along it to scroll.
+- Optional Back and Forward buttons along the bottom of the pad. They're a mouse's side buttons, so they go back and forward in browsers, File Explorer and most other apps. Turn on either or both under Settings, Mouse.
 - Haptic feedback, like a laptop's haptic touchpad: a click when you tap, a firmer one for right and middle clicks, and a click as a drag starts with a lighter one as you let go. The Left, Right and Middle buttons on the bottom bar click down and up the same way, and keys click too. The scroll bar ticks like a mouse wheel as you slide along it.
 - Turn haptics off, or set how strong they are, under Settings, Haptics. Each step of the slider clicks at its strength, so you can pick one by feel. From Android 13, Android's own *Touch feedback* (under Sound & vibration) also has to be on; the Haptics page says when it isn't.
 

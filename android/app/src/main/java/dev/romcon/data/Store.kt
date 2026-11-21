@@ -70,6 +70,10 @@ data class AppSettings(
     val scrollBar: Boolean = true,
     val scrollBarReversed: Boolean = false,
     val tapToClick: Boolean = true,
+    /** A Back button along the bottom of the trackpad, like a mouse's side button. */
+    val backButton: Boolean = false,
+    /** A Forward button along the bottom of the trackpad, beside Back when both are on. */
+    val forwardButton: Boolean = false,
     val typingPreview: Boolean = true,
     /** The phone keyboard closes after its Enter key, as after sending a message or a search. */
     val hideKeyboardOnEnter: Boolean = true,
@@ -175,6 +179,8 @@ class Store(context: Context) {
             scrollBar = prefs.getBoolean("scrollBar", d.scrollBar),
             scrollBarReversed = prefs.getBoolean("scrollBarReversed", d.scrollBarReversed),
             tapToClick = prefs.getBoolean("tapToClick", d.tapToClick),
+            backButton = prefs.getBoolean("backButton", d.backButton),
+            forwardButton = prefs.getBoolean("forwardButton", d.forwardButton),
             typingPreview = prefs.getBoolean("typingPreview", d.typingPreview),
             hideKeyboardOnEnter = prefs.getBoolean("hideKeyboardOnEnter", d.hideKeyboardOnEnter),
             haptics = prefs.getBoolean("haptics", d.haptics),
@@ -203,6 +209,8 @@ class Store(context: Context) {
             putBoolean("scrollBar", s.scrollBar)
             putBoolean("scrollBarReversed", s.scrollBarReversed)
             putBoolean("tapToClick", s.tapToClick)
+            putBoolean("backButton", s.backButton)
+            putBoolean("forwardButton", s.forwardButton)
             putBoolean("typingPreview", s.typingPreview)
             putBoolean("hideKeyboardOnEnter", s.hideKeyboardOnEnter)
             putBoolean("haptics", s.haptics)

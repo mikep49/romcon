@@ -6,17 +6,25 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,12 +37,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -137,34 +151,107 @@ fun Trackpad(settings: AppSettings, actions: PointerActions, modifier: Modifier 
     val currentActions = rememberUpdatedState(actions)
     val shape = RoundedCornerShape(28.dp)
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
-                .pointerInput(Unit) {
-                    trackpadGestures(motion, scope, { currentSettings.value }, { currentActions.value })
-                },
-            contentAlignment = Alignment.Center,
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape),
         ) {
-            // One short gesture per line, so nothing wraps on a narrow pad. Taps only work with tap to click on.
-            Text(
-                if (settings.tapToClick) {
-                    "Tap to click\nTwo-finger tap to right-click\nTwo fingers to scroll\nDouble-tap and slide to drag"
-                } else {
-                    "Two fingers to scroll"
-                },
-                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 22.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(24.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        trackpadGestures(motion, scope, { currentSettings.value }, { currentActions.value })
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                // One short gesture per line, so nothing wraps on a narrow pad. Taps only work with tap to click on.
+                Text(
+                    if (settings.tapToClick) {
+                        "Tap to click\nTwo-finger tap to right-click\nTwo fingers to scroll\nDouble-tap and slide to drag"
+                    } else {
+                        "Two fingers to scroll"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 22.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(24.dp),
+                )
+            }
+            if (settings.backButton || settings.forwardButton) {
+                BackForwardButtons(back = settings.backButton, forward = settings.forwardButton) { currentActions.value }
+            }
         }
         if (settings.scrollBar) {
             ScrollBar(motion, scope, { currentSettings.value }, { currentActions.value }, Modifier.width(44.dp).fillMaxHeight())
         }
+    }
+}
+
+/**
+ * A strip along the bottom of the trackpad with Back, Forward or both: the side buttons of a mouse, which go
+ * back and forward in browsers and File Explorer. One alone fills the strip. Touches here never reach the
+ * trackpad's gestures.
+ */
+@Composable
+private fun BackForwardButtons(back: Boolean, forward: Boolean, actions: () -> PointerActions) {
+    val line = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    HorizontalDivider(color = line)
+    Row(Modifier.fillMaxWidth().height(52.dp)) {
+        if (back) {
+            SideButton("Back", Icons.AutoMirrored.Filled.ArrowBack, Proto.BUTTON_BACK, actions, Modifier.weight(1f))
+        }
+        if (back && forward) VerticalDivider(color = line)
+        if (forward) {
+            SideButton("Forward", Icons.AutoMirrored.Filled.ArrowForward, Proto.BUTTON_FORWARD, actions, Modifier.weight(1f))
+        }
+    }
+}
+
+/** Holds [button] down while the finger stays on it, felt going down and coming back up, like a laptop's touchpad buttons. */
+@Composable
+private fun SideButton(label: String, icon: ImageVector, button: Int, actions: () -> PointerActions, modifier: Modifier) {
+    var pressed by remember { mutableStateOf(false) }
+    val tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (pressed) 0.9f else 0.7f)
+    Row(
+        modifier = modifier
+            .fillMaxHeight()
+            .background(if (pressed) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
+            .clearAndSetSemantics {
+                contentDescription = label
+                role = Role.Button
+                onClick {
+                    val a = actions()
+                    a.click(button)
+                    a.haptic(Feel.FIRM)
+                    true
+                }
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    val a = actions()
+                    pressed = true
+                    a.button(button, true)
+                    a.haptic(Feel.FIRM)
+                    try {
+                        waitForRelease()
+                    } finally {
+                        pressed = false
+                        a.button(button, false)
+                        a.haptic(Feel.RELEASE)
+                    }
+                }
+            },
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = tint)
     }
 }
 
