@@ -111,7 +111,11 @@ namespace RomCon
                     AppDomain.CurrentDomain.UnhandledException += (s, e) => Fatal(e.ExceptionObject as Exception);
 
                     var config = Config.Load(options.DataDir);
-                    if (options.Port.HasValue) config.Port = options.Port.Value;
+                    if (options.Port.HasValue)
+                    {
+                        config.Port = options.Port.Value;
+                        config.PortFromCommandLine = true;
+                    }
                     Log.Init(config.Dir);
                     KeepResponsive();
 

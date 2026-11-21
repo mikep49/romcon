@@ -10,6 +10,13 @@ namespace RomCon
         public const byte Version = 1;
         public const int DefaultPort = 50505;
         public const int DiscoveryPort = 50506;
+
+        /// <summary>
+        /// Where RomCon listens when its own port is taken, tried in this order. Windows lends blocks of ports from 49152 up to
+        /// Hyper-V, WSL and Docker, a new set at every start, and those can land on the default port; these sit below that.
+        /// The phone tries the same ports when a PC doesn't answer on the one it saved.
+        /// </summary>
+        public static readonly int[] FallbackPorts = { 45505, 46505, 47505 };
         public const string DiscoveryRequest = "ROMCON?1";
         public const string DiscoveryReply = "ROMCON!1";
         public const int MaxFrame = 8192;

@@ -128,6 +128,8 @@ Tag a release `v<version>`, matching `versionName` in `android/app/build.gradle.
 | UDP 50505 | Pointer movement, when the phone is set to UDP |
 | UDP 50506 | Discovery |
 
+If Windows has reserved 50505 (it lends ports above 49152 to Hyper-V, WSL and Docker), RomCon moves to 45505, 46505 or 47505 and saves that as `port=` in `settings.ini`. Paired phones find it there by themselves.
+
 The wire format is in [protocol.md](protocol.md).
 
 ### Command-line flags

@@ -24,6 +24,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
+import kotlin.concurrent.thread
 
 enum class FailKind { UNREACHABLE, IDENTITY_CHANGED, NOT_PAIRED, WRONG_PIN, PAIRING_CLOSED, TOO_MANY_ATTEMPTS, VERSION, PROTOCOL, CLOSED }
 
@@ -120,6 +121,9 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
 
     val isOpen: Boolean get() = !closed.get()
 
+    /** The PC's port this session reached, which [openPaired] may have found somewhere other than where it looked first. */
+    val port: Int get() = socket.port
+
     companion object {
         private const val CONNECT_TIMEOUT_MS = 5000
         private const val HELLO_TIMEOUT_MS = 15000
@@ -180,6 +184,35 @@ class RemoteSession private constructor(private val socket: SSLSocket, private v
                 raw.closeQuietly()
                 throw RemoteException(FailKind.UNREACHABLE, "Couldn't reach $host: ${e.message}", e)
             }
+        }
+
+        /**
+         * [open] for a PC this phone has paired with. When [port] doesn't answer, it also looks on [Proto.FALLBACK_PORTS], where
+         * the PC moves when Windows has reserved its usual port. The certificate is pinned, so nothing else on those ports
+         * passes for the PC. [port] on the session says where it was found; failing everywhere reports the failure at [port].
+         */
+        fun openPaired(host: String, port: Int, fingerprint: String): RemoteSession {
+            val failure = try {
+                return open(host, port, fingerprint)
+            } catch (e: RemoteException) {
+                if (e.kind != FailKind.UNREACHABLE) throw e
+                e
+            }
+            // All at once, so a PC that's off costs one more connect timeout rather than one per port.
+            val others = Proto.FALLBACK_PORTS.filter { it != port }
+            val results = LinkedBlockingQueue<Result<RemoteSession>>()
+            val taken = AtomicBoolean(false)
+            for (other in others) {
+                thread(isDaemon = true, name = "find-port") {
+                    val result = runCatching { open(host, other, fingerprint) }
+                    // Only one session goes back; one found after it (which shouldn't happen) is closed.
+                    if (result.isSuccess && !taken.compareAndSet(false, true)) result.getOrNull()?.close() else results.put(result)
+                }
+            }
+            repeat(others.size) {
+                results.take().onSuccess { return it }
+            }
+            throw failure
         }
 
         private fun Socket.closeQuietly() = try {

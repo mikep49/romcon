@@ -11,6 +11,9 @@ object Proto {
     const val VERSION = 1
     const val DEFAULT_PORT = 50505
     const val DISCOVERY_PORT = 50506
+
+    /** Where the PC listens when its own port is taken (see the Windows app's Proto.FallbackPorts). */
+    val FALLBACK_PORTS = listOf(45505, 46505, 47505)
     const val DISCOVERY_REQUEST = "ROMCON?1"
     const val DISCOVERY_REPLY = "ROMCON!1"
     const val MAX_FRAME = 8192
